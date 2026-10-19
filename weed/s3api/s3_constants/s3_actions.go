@@ -20,6 +20,9 @@ const (
 	ACTION_DELETE_BUCKET_POLICY          = "DeleteBucketPolicy"
 	ACTION_PUT_BUCKET_QUOTA              = "PutBucketQuota"
 	ACTION_GET_BUCKET_QUOTA              = "GetBucketQuota"
+	// SeaweedFS extension: per-bucket traffic quota observability
+	// (GET /{bucket}?seaweedfs-traffic-quota).
+	ACTION_GET_BUCKET_TRAFFIC_QUOTA = "GetBucketTrafficQuota"
 
 	SeaweedStorageDestinationHeader = "x-seaweedfs-destination"
 	MultipartUploadsFolder          = ".uploads"

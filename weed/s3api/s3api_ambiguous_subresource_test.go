@@ -113,11 +113,12 @@ func TestListTypeOwnershipControlsRejectedBeforeHandler(t *testing.T) {
 // modifies the operation it accompanies. A selector left out of both
 // authorizes as one operation while the router serves another.
 func TestRouteQueryKeysAreClassified(t *testing.T) {
-	// Action selects STS routes on the root router, id narrows a config
-	// subresource, partNumber accompanies uploadId; none select an S3
-	// operation on their own.
+	// Action selects STS/IAM routes on the root router, seaweedfs selects the
+	// service-level traffic quota observability route (/?seaweedfs=trafficQuotas),
+	// id narrows a config subresource, partNumber accompanies uploadId; none
+	// select a bucket S3 operation on their own.
 	modifiers := map[string]bool{
-		"Action": true, "id": true, "partNumber": true,
+		"Action": true, "seaweedfs": true, "id": true, "partNumber": true,
 	}
 
 	router := mux.NewRouter()

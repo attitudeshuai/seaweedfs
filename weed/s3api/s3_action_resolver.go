@@ -291,6 +291,11 @@ func resolveFromQueryParameters(query url.Values, method string, hasObject bool)
 		}
 	}
 
+	// SeaweedFS extension: per-bucket traffic quota observability.
+	if !hasObject && query.Has("seaweedfs-traffic-quota") && method == http.MethodGet {
+		return s3_constants.S3_ACTION_GET_BUCKET_TRAFFIC_QUOTA
+	}
+
 	return ""
 }
 
@@ -405,6 +410,8 @@ func mapBaseActionToS3Format(baseAction string) string {
 		return s3_constants.S3_ACTION_PUT_BUCKET_QUOTA
 	case s3_constants.ACTION_GET_BUCKET_QUOTA:
 		return s3_constants.S3_ACTION_GET_BUCKET_QUOTA
+	case s3_constants.ACTION_GET_BUCKET_TRAFFIC_QUOTA:
+		return s3_constants.S3_ACTION_GET_BUCKET_TRAFFIC_QUOTA
 	default:
 		// For unknown actions, prefix with s3: to maintain format consistency
 		return "s3:" + baseAction

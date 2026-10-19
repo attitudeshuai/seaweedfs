@@ -201,6 +201,9 @@ func TestResolveS3Action_Quota(t *testing.T) {
 		{"policy wins over quota", http.MethodPut, "policy&seaweedfs-quota", s3_constants.S3_ACTION_PUT_BUCKET_POLICY},
 		{"quota after policy wins too", http.MethodPut, "seaweedfs-quota&policy", s3_constants.S3_ACTION_PUT_BUCKET_POLICY},
 		{"tagging wins over quota", http.MethodPut, "tagging&seaweedfs-quota", s3_constants.S3_ACTION_PUT_BUCKET_TAGGING},
+		{"traffic quota get", http.MethodGet, "seaweedfs-traffic-quota", s3_constants.S3_ACTION_GET_BUCKET_TRAFFIC_QUOTA},
+		{"storage quota wins over traffic quota", http.MethodGet, "seaweedfs-quota&seaweedfs-traffic-quota", s3_constants.S3_ACTION_GET_BUCKET_QUOTA},
+		{"other selector wins over traffic quota", http.MethodGet, "seaweedfs-traffic-quota&policy", s3_constants.S3_ACTION_GET_BUCKET_POLICY},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

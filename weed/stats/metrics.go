@@ -781,6 +781,59 @@ var (
 			Help:      "Whether each S3 bucket is read-only (1) or writable (0), e.g. after exceeding its quota.",
 		}, []string{"bucket"})
 
+	// S3 per-bucket / per-identity traffic quota metrics. The "scope" label is
+	// "bucket" or "identity" and "name" carries the bucket or identity name.
+	// Read and write paths are distinguished by "direction". Only entities with
+	// a quota declared through the config plane emit these series.
+	S3TrafficQuotaThrottledCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: subsystemS3,
+			Name:      "traffic_quota_throttled_total",
+			Help:      "Total requests blocked by an S3 traffic quota. result=\"rejected\" for immediate SlowDown under the reject policy, result=\"timeout\" for requests that queued but exhausted their wait budget. reason names the exceeded dimension.",
+		}, []string{"scope", "name", "direction", "reason", "result"})
+
+	S3TrafficQuotaQueuedCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: Namespace,
+			Subsystem: subsystemS3,
+			Name:      "traffic_quota_queued_total",
+			Help:      "Total requests that had to wait in an S3 traffic quota queue under the queue policy before being admitted.",
+		}, []string{"scope", "name", "direction"})
+
+	S3TrafficQuotaQueueWaitHistogram = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: subsystemS3,
+			Name:      "traffic_quota_queue_wait_seconds",
+			Help:      "Time requests spent waiting in an S3 traffic quota queue before being admitted.",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 18),
+		}, []string{"scope", "name", "direction"})
+
+	S3TrafficQuotaInFlightGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: subsystemS3,
+			Name:      "traffic_quota_in_flight_requests",
+			Help:      "Current in-flight requests counted against an S3 traffic quota scope, per read/write direction.",
+		}, []string{"scope", "name", "direction"})
+
+	S3TrafficQuotaRateTokensGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: subsystemS3,
+			Name:      "traffic_quota_rate_tokens_available",
+			Help:      "Remaining request-rate token budget for an S3 traffic quota scope (refills every minute).",
+		}, []string{"scope", "name", "direction"})
+
+	S3TrafficQuotaBytesTokensGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Subsystem: subsystemS3,
+			Name:      "traffic_quota_bytes_tokens_available",
+			Help:      "Remaining transfer-bytes token budget for an S3 traffic quota scope (refills every minute).",
+		}, []string{"scope", "name", "direction"})
+
 	RemoteCacheReadCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: Namespace,
@@ -1071,6 +1124,12 @@ func init() {
 	Gather.MustRegister(S3TimeToFirstByteHistogram)
 	Gather.MustRegister(S3BucketTrafficReceivedBytesCounter)
 	Gather.MustRegister(S3BucketTrafficSentBytesCounter)
+	Gather.MustRegister(S3TrafficQuotaThrottledCounter)
+	Gather.MustRegister(S3TrafficQuotaQueuedCounter)
+	Gather.MustRegister(S3TrafficQuotaQueueWaitHistogram)
+	Gather.MustRegister(S3TrafficQuotaInFlightGauge)
+	Gather.MustRegister(S3TrafficQuotaRateTokensGauge)
+	Gather.MustRegister(S3TrafficQuotaBytesTokensGauge)
 	Gather.MustRegister(S3DeletedObjectsCounter)
 	Gather.MustRegister(S3UploadedObjectsCounter)
 	Gather.MustRegister(S3BucketSizeBytesGauge)
@@ -1194,6 +1253,20 @@ func DeleteBucketMetrics(bucket string) {
 	c += RemoteCacheReadCounter.DeletePartialMatch(labels)
 
 	glog.V(0).Infof("delete bucket metrics, %s: %d", bucket, c)
+}
+
+// DeleteTrafficQuotaScope removes all traffic-quota series belonging to one
+// configured scope ("bucket" or "identity"), called when a runtime config
+// update drops a quota rule.
+func DeleteTrafficQuotaScope(scope, name string) {
+	labels := prometheus.Labels{"scope": scope, "name": name}
+	c := S3TrafficQuotaThrottledCounter.DeletePartialMatch(labels)
+	c += S3TrafficQuotaQueuedCounter.DeletePartialMatch(labels)
+	c += S3TrafficQuotaQueueWaitHistogram.DeletePartialMatch(labels)
+	c += S3TrafficQuotaInFlightGauge.DeletePartialMatch(labels)
+	c += S3TrafficQuotaRateTokensGauge.DeletePartialMatch(labels)
+	c += S3TrafficQuotaBytesTokensGauge.DeletePartialMatch(labels)
+	glog.V(0).Infof("delete traffic quota metrics, %s %s: %d", scope, name, c)
 }
 
 func DeleteCollectionMetrics(collection string) {

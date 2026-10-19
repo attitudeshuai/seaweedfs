@@ -91,6 +91,7 @@ type S3ApiServer struct {
 	iam                   *IdentityAccessManagement
 	iamIntegration        *S3IAMIntegration // Advanced IAM integration for JWT authentication
 	cb                    *CircuitBreaker
+	trafficQuota          *TrafficQuotaManager
 	randomClientId        int32
 	filerGuard            *security.Guard
 	filerClient           *wdclient.FilerClient
@@ -328,6 +329,11 @@ func NewS3ApiServerWithStore(router *mux.Router, option *S3ApiServerOption, expl
 	}
 	readerCache := filer.NewReaderCache(s3ReaderCacheDownloaderLimit, chunkCache, filerClient.GetLookupFileIdFunction(), filerClient, readerCacheBudget)
 
+	// Per-bucket and per-identity traffic quotas. Starts disabled and stays
+	// a no-op (one atomic load per request) until /etc/s3/traffic_quota.json
+	// is delivered from the config plane and hot reloaded.
+	trafficQuota := NewTrafficQuotaManager()
+
 	s3ApiServer = &S3ApiServer{
 		option:                option,
 		iam:                   iam,
@@ -335,6 +341,7 @@ func NewS3ApiServerWithStore(router *mux.Router, option *S3ApiServerOption, expl
 		filerGuard:            security.NewGuard([]string{}, signingKey, expiresAfterSec, readSigningKey, readExpiresAfterSec),
 		filerClient:           filerClient,
 		cb:                    NewCircuitBreaker(option),
+		trafficQuota:          trafficQuota,
 		credentialManager:     iam.credentialManager,
 		bucketConfigCache:     NewBucketConfigCache(60 * time.Minute), // Increased TTL since cache is now event-driven
 		policyEngine:          policyEngine,                           // Initialize bucket policy engine
@@ -368,6 +375,16 @@ func NewS3ApiServerWithStore(router *mux.Router, option *S3ApiServerOption, expl
 
 	// Set s3a reference in circuit breaker for upload limiting
 	s3ApiServer.cb.s3a = s3ApiServer
+
+	// Load any traffic quota rules already staged on a filer, then install the
+	// quota layer as the circuit breaker per-request interceptor. It runs
+	// after authentication (identity known) but before upload limiting, so a
+	// queued request holds no global slot and a rejected one never touches the
+	// gateway's shared resources. With no config file the manager stays
+	// disabled and the interceptor is a single atomic-load fast path.
+	trafficQuota.loadFromFiler(option.Filers, option.GrpcDialOption)
+	s3ApiServer.cb.Interceptor = trafficQuota.intercept
+	trafficQuota.activate()
 
 	// Pass policy engine to IAM for bucket policy evaluation
 	// This avoids circular dependency by not passing the entire S3ApiServer
@@ -549,6 +566,9 @@ func (s3a *S3ApiServer) applyTrustedProxies(v util.Configuration) {
 }
 
 func (s3a *S3ApiServer) Shutdown() {
+	if s3a.trafficQuota != nil {
+		s3a.trafficQuota.Close()
+	}
 	if s3a.versionsReconcilerStop != nil {
 		s3a.versionsReconcilerStop()
 	}
@@ -1062,6 +1082,10 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		bucket.Methods(http.MethodPut).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.PutBucketQuotaHandler, ACTION_PUT_BUCKET_QUOTA)), "PUT")).Queries("seaweedfs-quota", "")
 		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetBucketQuotaHandler, ACTION_GET_BUCKET_QUOTA)), "GET")).Queries("seaweedfs-quota", "")
 
+		// SeaweedFS extension: live per-bucket traffic quota consumption
+		// GET /{bucket}?seaweedfs-traffic-quota (s3:GetBucketTrafficQuota)
+		bucket.Methods(http.MethodGet).HandlerFunc(track(s3a.iam.Auth(s3a.cb.Limit(s3a.GetBucketTrafficQuotaHandler, ACTION_GET_BUCKET_TRAFFIC_QUOTA)), "GET")).Queries("seaweedfs-traffic-quota", "")
+
 		// raw buckets
 
 		// PostPolicy
@@ -1181,6 +1205,12 @@ func (s3a *S3ApiServer) registerRouter(router *mux.Router) {
 		apiRouter.Methods(http.MethodPost).Path("/").
 			HandlerFunc(track(s3a.stsHandlers.HandleSTSRequest, "STS-Fallback"))
 	}
+
+	// SeaweedFS extension: service-wide traffic quota observability
+	// GET /?seaweedfs=trafficQuotas — all active bucket/identity rules with
+	// live consumption (admin-level). Registered before ListBuckets so the
+	// query matcher wins over the GET / catch-all.
+	apiRouter.Methods(http.MethodGet).Path("/").HandlerFunc(track(s3a.iam.Auth(s3a.ListTrafficQuotasHandler, ACTION_ADMIN), "ADMIN")).Queries("seaweedfs", "trafficQuotas")
 
 	// ListBuckets
 	apiRouter.Methods(http.MethodGet).Path("/").HandlerFunc(track(s3a.iam.Auth(s3a.ListBucketsHandler, ACTION_LIST), "LIST"))

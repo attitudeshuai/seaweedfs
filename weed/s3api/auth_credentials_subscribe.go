@@ -38,6 +38,7 @@ func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, lastTsNs int64, p
 		_ = s3a.onOIDCProviderChange(dir, message.OldEntry, message.NewEntry)
 		s3a.onRoleChange(dir)
 		_ = s3a.onCircuitBreakerConfigChange(dir, message.OldEntry, message.NewEntry)
+		_ = s3a.onTrafficQuotaConfigChange(dir, message.OldEntry, message.NewEntry)
 
 		// For moves across directories, replay a delete event for the source directory
 		if message.NewParentPath != "" && resp.Directory != message.NewParentPath {
@@ -46,6 +47,7 @@ func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, lastTsNs int64, p
 			_ = s3a.onOIDCProviderChange(resp.Directory, message.OldEntry, nil)
 			s3a.onRoleChange(resp.Directory)
 			_ = s3a.onCircuitBreakerConfigChange(resp.Directory, message.OldEntry, nil)
+			_ = s3a.onTrafficQuotaConfigChange(resp.Directory, message.OldEntry, nil)
 		}
 
 		// For same-directory renames, replay a delete event for the old name
@@ -55,6 +57,7 @@ func (s3a *S3ApiServer) subscribeMetaEvents(clientName string, lastTsNs int64, p
 			message.OldEntry.Name != message.NewEntry.Name {
 			_ = s3a.onBucketMetadataChange(dir, message.OldEntry, nil)
 			_ = s3a.onCircuitBreakerConfigChange(dir, message.OldEntry, nil)
+			_ = s3a.onTrafficQuotaConfigChange(dir, message.OldEntry, nil)
 		}
 
 		return nil
@@ -195,6 +198,30 @@ func (s3a *S3ApiServer) onCircuitBreakerConfigChange(dir string, oldEntry *filer
 	// Handle create/update
 	if newEntry != nil && newEntry.Name == s3_constants.CircuitBreakerConfigFile {
 		if err := s3a.cb.LoadS3ApiConfigurationFromBytes(newEntry.Content); err != nil {
+			return err
+		}
+		glog.V(1).Infof("updated %s/%s", dir, newEntry.Name)
+	}
+	return nil
+}
+
+// onTrafficQuotaConfigChange handles traffic quota config file changes
+// (create, update, delete), applying the new per-bucket/per-identity rules at
+// runtime without restarting the gateway.
+func (s3a *S3ApiServer) onTrafficQuotaConfigChange(dir string, oldEntry *filer_pb.Entry, newEntry *filer_pb.Entry) error {
+	if s3a.trafficQuota == nil || dir != s3_constants.CircuitBreakerConfigDir {
+		return nil
+	}
+
+	// Handle deletion: empty document disables the layer.
+	if newEntry == nil && oldEntry != nil && oldEntry.Name == s3_constants.TrafficQuotaConfigFile {
+		glog.V(1).Infof("Traffic quota config file deleted, disabling traffic quotas")
+		return s3a.trafficQuota.LoadFromBytes(nil)
+	}
+
+	// Handle create/update
+	if newEntry != nil && newEntry.Name == s3_constants.TrafficQuotaConfigFile {
+		if err := s3a.trafficQuota.LoadFromBytes(newEntry.Content); err != nil {
 			return err
 		}
 		glog.V(1).Infof("updated %s/%s", dir, newEntry.Name)

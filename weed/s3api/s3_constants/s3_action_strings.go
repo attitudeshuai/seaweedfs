@@ -106,6 +106,10 @@ const (
 	S3_ACTION_PUT_BUCKET_QUOTA = "s3:PutBucketQuota"
 	S3_ACTION_GET_BUCKET_QUOTA = "s3:GetBucketQuota"
 
+	// SeaweedFS extension: read back per-bucket traffic quota consumption
+	// (GET /{bucket}?seaweedfs-traffic-quota).
+	S3_ACTION_GET_BUCKET_TRAFFIC_QUOTA = "s3:GetBucketTrafficQuota"
+
 	// Wildcard for all S3 actions
 	S3_ACTION_ALL = "s3:*"
 )

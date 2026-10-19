@@ -63,10 +63,16 @@ func BucketTrafficReceived(bytesReceived int64, r *http.Request) {
 	bucket, _ := s3_constants.GetBucketAndObject(r)
 	stats_collect.RecordBucketActiveTime(bucket)
 	stats_collect.S3BucketTrafficReceivedBytesCounter.WithLabelValues(bucket).Add(float64(bytesReceived))
+	// Post-paid accounting against the per-bucket / per-identity write byte
+	// quota. No-op unless a traffic quota is configured.
+	trafficQuotaMeterBytes(r, true, bytesReceived)
 }
 
 func BucketTrafficSent(bytesTransferred int64, r *http.Request) {
 	bucket, _ := s3_constants.GetBucketAndObject(r)
 	stats_collect.RecordBucketActiveTime(bucket)
 	stats_collect.S3BucketTrafficSentBytesCounter.WithLabelValues(bucket).Add(float64(bytesTransferred))
+	// Post-paid accounting against the per-bucket / per-identity read byte
+	// quota. No-op unless a traffic quota is configured.
+	trafficQuotaMeterBytes(r, false, bytesTransferred)
 }
