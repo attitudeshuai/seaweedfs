@@ -197,6 +197,101 @@ func (PosixLockOp) EnumDescriptor() ([]byte, []int) {
 	return file_filer_proto_rawDescGZIP(), []int{2}
 }
 
+// SubscriptionTakeoverPolicy selects what happens to an active stream when a
+// new connection registers the same subscription name.
+type SubscriptionTakeoverPolicy int32
+
+const (
+	SubscriptionTakeoverPolicy_TAKEOVER_DISCONNECT_OLD SubscriptionTakeoverPolicy = 0 // the old stream is closed immediately; in-flight events may be redelivered
+	SubscriptionTakeoverPolicy_TAKEOVER_DRAIN_OLD      SubscriptionTakeoverPolicy = 1 // the old stream stops serving new events and is closed once it has acked what it holds (bounded by the grace)
+)
+
+// Enum value maps for SubscriptionTakeoverPolicy.
+var (
+	SubscriptionTakeoverPolicy_name = map[int32]string{
+		0: "TAKEOVER_DISCONNECT_OLD",
+		1: "TAKEOVER_DRAIN_OLD",
+	}
+	SubscriptionTakeoverPolicy_value = map[string]int32{
+		"TAKEOVER_DISCONNECT_OLD": 0,
+		"TAKEOVER_DRAIN_OLD":      1,
+	}
+)
+
+func (x SubscriptionTakeoverPolicy) Enum() *SubscriptionTakeoverPolicy {
+	p := new(SubscriptionTakeoverPolicy)
+	*p = x
+	return p
+}
+
+func (x SubscriptionTakeoverPolicy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionTakeoverPolicy) Descriptor() protoreflect.EnumDescriptor {
+	return file_filer_proto_enumTypes[3].Descriptor()
+}
+
+func (SubscriptionTakeoverPolicy) Type() protoreflect.EnumType {
+	return &file_filer_proto_enumTypes[3]
+}
+
+func (x SubscriptionTakeoverPolicy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionTakeoverPolicy.Descriptor instead.
+func (SubscriptionTakeoverPolicy) EnumDescriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{3}
+}
+
+// SubscriptionAckGranularity selects how a client confirms consumption.
+type SubscriptionAckGranularity int32
+
+const (
+	SubscriptionAckGranularity_ACK_WATERMARK  SubscriptionAckGranularity = 0 // an ack of ts_ns confirms every event at or below it
+	SubscriptionAckGranularity_ACK_INDIVIDUAL SubscriptionAckGranularity = 1 // each listed ts_ns is one processed event; the confirmed position advances the acked prefix in delivery order
+)
+
+// Enum value maps for SubscriptionAckGranularity.
+var (
+	SubscriptionAckGranularity_name = map[int32]string{
+		0: "ACK_WATERMARK",
+		1: "ACK_INDIVIDUAL",
+	}
+	SubscriptionAckGranularity_value = map[string]int32{
+		"ACK_WATERMARK":  0,
+		"ACK_INDIVIDUAL": 1,
+	}
+)
+
+func (x SubscriptionAckGranularity) Enum() *SubscriptionAckGranularity {
+	p := new(SubscriptionAckGranularity)
+	*p = x
+	return p
+}
+
+func (x SubscriptionAckGranularity) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SubscriptionAckGranularity) Descriptor() protoreflect.EnumDescriptor {
+	return file_filer_proto_enumTypes[4].Descriptor()
+}
+
+func (SubscriptionAckGranularity) Type() protoreflect.EnumType {
+	return &file_filer_proto_enumTypes[4]
+}
+
+func (x SubscriptionAckGranularity) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SubscriptionAckGranularity.Descriptor instead.
+func (SubscriptionAckGranularity) EnumDescriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{4}
+}
+
 type WriteCondition_Kind int32
 
 const (
@@ -254,11 +349,11 @@ func (x WriteCondition_Kind) String() string {
 }
 
 func (WriteCondition_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_filer_proto_enumTypes[3].Descriptor()
+	return file_filer_proto_enumTypes[5].Descriptor()
 }
 
 func (WriteCondition_Kind) Type() protoreflect.EnumType {
-	return &file_filer_proto_enumTypes[3]
+	return &file_filer_proto_enumTypes[5]
 }
 
 func (x WriteCondition_Kind) Number() protoreflect.EnumNumber {
@@ -306,11 +401,11 @@ func (x ObjectMutation_Type) String() string {
 }
 
 func (ObjectMutation_Type) Descriptor() protoreflect.EnumDescriptor {
-	return file_filer_proto_enumTypes[4].Descriptor()
+	return file_filer_proto_enumTypes[6].Descriptor()
 }
 
 func (ObjectMutation_Type) Type() protoreflect.EnumType {
-	return &file_filer_proto_enumTypes[4]
+	return &file_filer_proto_enumTypes[6]
 }
 
 func (x ObjectMutation_Type) Number() protoreflect.EnumNumber {
@@ -4271,8 +4366,20 @@ type SubscribeMetadataRequest struct {
 	ClientSupportsBatching       bool                   `protobuf:"varint,11,opt,name=client_supports_batching,json=clientSupportsBatching,proto3" json:"client_supports_batching,omitempty"`                     // client can unpack SubscribeMetadataResponse.events
 	ClientSupportsMetadataChunks bool                   `protobuf:"varint,12,opt,name=client_supports_metadata_chunks,json=clientSupportsMetadataChunks,proto3" json:"client_supports_metadata_chunks,omitempty"` // client can read log file chunks from volume servers
 	ClientSupportsIdleHeartbeat  bool                   `protobuf:"varint,13,opt,name=client_supports_idle_heartbeat,json=clientSupportsIdleHeartbeat,proto3" json:"client_supports_idle_heartbeat,omitempty"`    // server may send empty responses carrying the current time while the client is caught up
-	unknownFields                protoimpl.UnknownFields
-	sizeCache                    protoimpl.SizeCache
+	// Server-managed, named subscription cursor. Empty keeps the legacy
+	// anonymous semantics: the client self-reports since_ns and owns the
+	// progress. When non-empty the server persists the confirmed position
+	// under this name, resumes any connection carrying it from there, and
+	// enforces a single active stream per name.
+	SubscriptionName string `protobuf:"bytes,14,opt,name=subscription_name,json=subscriptionName,proto3" json:"subscription_name,omitempty"`
+	// Declarations applied when the name is first registered (or re-registered
+	// after a reclaim); reconnects with the same name ignore them.
+	SubscriptionTakeoverPolicy  SubscriptionTakeoverPolicy `protobuf:"varint,15,opt,name=subscription_takeover_policy,json=subscriptionTakeoverPolicy,proto3,enum=filer_pb.SubscriptionTakeoverPolicy" json:"subscription_takeover_policy,omitempty"` // how a new instance takes the name from an active stream
+	SubscriptionAckGranularity  SubscriptionAckGranularity `protobuf:"varint,16,opt,name=subscription_ack_granularity,json=subscriptionAckGranularity,proto3,enum=filer_pb.SubscriptionAckGranularity" json:"subscription_ack_granularity,omitempty"` // how the client confirms progress
+	SubscriptionAckTimeoutNs    int64                      `protobuf:"varint,17,opt,name=subscription_ack_timeout_ns,json=subscriptionAckTimeoutNs,proto3" json:"subscription_ack_timeout_ns,omitempty"`                                              // reclaim the cursor when no ack arrives for this long; 0 = never reclaim
+	SubscriptionTakeoverGraceNs int64                      `protobuf:"varint,18,opt,name=subscription_takeover_grace_ns,json=subscriptionTakeoverGraceNs,proto3" json:"subscription_takeover_grace_ns,omitempty"`                                     // DRAIN mode: longest wait for the old stream to ack in-flight events; 0 = server default
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
 }
 
 func (x *SubscribeMetadataRequest) Reset() {
@@ -4389,6 +4496,41 @@ func (x *SubscribeMetadataRequest) GetClientSupportsIdleHeartbeat() bool {
 	return false
 }
 
+func (x *SubscribeMetadataRequest) GetSubscriptionName() string {
+	if x != nil {
+		return x.SubscriptionName
+	}
+	return ""
+}
+
+func (x *SubscribeMetadataRequest) GetSubscriptionTakeoverPolicy() SubscriptionTakeoverPolicy {
+	if x != nil {
+		return x.SubscriptionTakeoverPolicy
+	}
+	return SubscriptionTakeoverPolicy_TAKEOVER_DISCONNECT_OLD
+}
+
+func (x *SubscribeMetadataRequest) GetSubscriptionAckGranularity() SubscriptionAckGranularity {
+	if x != nil {
+		return x.SubscriptionAckGranularity
+	}
+	return SubscriptionAckGranularity_ACK_WATERMARK
+}
+
+func (x *SubscribeMetadataRequest) GetSubscriptionAckTimeoutNs() int64 {
+	if x != nil {
+		return x.SubscriptionAckTimeoutNs
+	}
+	return 0
+}
+
+func (x *SubscribeMetadataRequest) GetSubscriptionTakeoverGraceNs() int64 {
+	if x != nil {
+		return x.SubscriptionTakeoverGraceNs
+	}
+	return 0
+}
+
 type SubscribeMetadataResponse struct {
 	state             protoimpl.MessageState       `protogen:"open.v1"`
 	Directory         string                       `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
@@ -4397,8 +4539,14 @@ type SubscribeMetadataResponse struct {
 	Events            []*SubscribeMetadataResponse `protobuf:"bytes,4,rep,name=events,proto3" json:"events,omitempty"`                                 // batch of additional events (backlog catch-up)
 	LogFileRefs       []*LogFileChunkRef           `protobuf:"bytes,5,rep,name=log_file_refs,json=logFileRefs,proto3" json:"log_file_refs,omitempty"`  // log file chunk refs for client direct-read
 	FlushedTsNs       int64                        `protobuf:"varint,6,opt,name=flushed_ts_ns,json=flushedTsNs,proto3" json:"flushed_ts_ns,omitempty"` // local log-buffer flush watermark: everything at or below it is on disk
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Sent once as the first response on a named subscription: the persisted
+	// confirmed position the stream starts after, and the owner token the
+	// client echoes on acks. Zero/empty on every other response and on
+	// anonymous subscriptions, so event payloads are unchanged.
+	SubscriptionConfirmedTsNs int64  `protobuf:"varint,7,opt,name=subscription_confirmed_ts_ns,json=subscriptionConfirmedTsNs,proto3" json:"subscription_confirmed_ts_ns,omitempty"`
+	SubscriptionOwnerInstance string `protobuf:"bytes,8,opt,name=subscription_owner_instance,json=subscriptionOwnerInstance,proto3" json:"subscription_owner_instance,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *SubscribeMetadataResponse) Reset() {
@@ -4471,6 +4619,20 @@ func (x *SubscribeMetadataResponse) GetFlushedTsNs() int64 {
 		return x.FlushedTsNs
 	}
 	return 0
+}
+
+func (x *SubscribeMetadataResponse) GetSubscriptionConfirmedTsNs() int64 {
+	if x != nil {
+		return x.SubscriptionConfirmedTsNs
+	}
+	return 0
+}
+
+func (x *SubscribeMetadataResponse) GetSubscriptionOwnerInstance() string {
+	if x != nil {
+		return x.SubscriptionOwnerInstance
+	}
+	return ""
 }
 
 type ListMetadataSubscribersRequest struct {
@@ -5107,9 +5269,9 @@ func (x *LocateBrokerResponse) GetResources() []*LocateBrokerResponse_Resource {
 	return nil
 }
 
-// ///////////////////////
+/////////////////////////
 // Key-Value operations
-// ///////////////////////
+/////////////////////////
 type KvGetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -5302,9 +5464,9 @@ func (x *KvPutResponse) GetError() string {
 	return ""
 }
 
-// ///////////////////////
+/////////////////////////
 // path-based configurations
-// ///////////////////////
+/////////////////////////
 type FilerConf struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       int32                  `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
@@ -5357,9 +5519,9 @@ func (x *FilerConf) GetLocations() []*FilerConf_PathConf {
 	return nil
 }
 
-// ///////////////////////
+/////////////////////////
 // Remote Storage related
-// ///////////////////////
+/////////////////////////
 type CacheRemoteObjectToLocalClusterRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Directory           string                 `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
@@ -5498,9 +5660,9 @@ func (x *CacheRemoteObjectToLocalClusterResponse) GetLogSignature() int32 {
 	return 0
 }
 
-// ///////////////////////
+/////////////////////////
 // distributed lock management
-// ///////////////////////
+/////////////////////////
 type LockRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -6887,6 +7049,742 @@ func (x *LookupDirectoryEntriesResponse) GetReadAuth() map[string]string {
 	return nil
 }
 
+type AckMetadataSubscriptionRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	SubscriptionName string                 `protobuf:"bytes,1,opt,name=subscription_name,json=subscriptionName,proto3" json:"subscription_name,omitempty"`
+	// Confirmed event timestamps. With ACK_WATERMARK only the largest value is
+	// used. ACK_INDIVIDUAL may list several individually processed events.
+	TsNs          []int64 `protobuf:"varint,2,rep,packed,name=ts_ns,json=tsNs,proto3" json:"ts_ns,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AckMetadataSubscriptionRequest) Reset() {
+	*x = AckMetadataSubscriptionRequest{}
+	mi := &file_filer_proto_msgTypes[94]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckMetadataSubscriptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckMetadataSubscriptionRequest) ProtoMessage() {}
+
+func (x *AckMetadataSubscriptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[94]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckMetadataSubscriptionRequest.ProtoReflect.Descriptor instead.
+func (*AckMetadataSubscriptionRequest) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{94}
+}
+
+func (x *AckMetadataSubscriptionRequest) GetSubscriptionName() string {
+	if x != nil {
+		return x.SubscriptionName
+	}
+	return ""
+}
+
+func (x *AckMetadataSubscriptionRequest) GetTsNs() []int64 {
+	if x != nil {
+		return x.TsNs
+	}
+	return nil
+}
+
+type AckMetadataSubscriptionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ConfirmedTsNs int64                  `protobuf:"varint,1,opt,name=confirmed_ts_ns,json=confirmedTsNs,proto3" json:"confirmed_ts_ns,omitempty"` // server-side confirmed position after the ack; it never moves backwards
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AckMetadataSubscriptionResponse) Reset() {
+	*x = AckMetadataSubscriptionResponse{}
+	mi := &file_filer_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckMetadataSubscriptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckMetadataSubscriptionResponse) ProtoMessage() {}
+
+func (x *AckMetadataSubscriptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckMetadataSubscriptionResponse.ProtoReflect.Descriptor instead.
+func (*AckMetadataSubscriptionResponse) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *AckMetadataSubscriptionResponse) GetConfirmedTsNs() int64 {
+	if x != nil {
+		return x.ConfirmedTsNs
+	}
+	return 0
+}
+
+type ListNamedMetadataSubscriptionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNamedMetadataSubscriptionsRequest) Reset() {
+	*x = ListNamedMetadataSubscriptionsRequest{}
+	mi := &file_filer_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNamedMetadataSubscriptionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNamedMetadataSubscriptionsRequest) ProtoMessage() {}
+
+func (x *ListNamedMetadataSubscriptionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNamedMetadataSubscriptionsRequest.ProtoReflect.Descriptor instead.
+func (*ListNamedMetadataSubscriptionsRequest) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{96}
+}
+
+type NamedMetadataSubscription struct {
+	state           protoimpl.MessageState     `protogen:"open.v1"`
+	Name            string                     `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	ConfirmedTsNs   int64                      `protobuf:"varint,2,opt,name=confirmed_ts_ns,json=confirmedTsNs,proto3" json:"confirmed_ts_ns,omitempty"`
+	LastAckAtNs     int64                      `protobuf:"varint,3,opt,name=last_ack_at_ns,json=lastAckAtNs,proto3" json:"last_ack_at_ns,omitempty"`
+	CreatedAtNs     int64                      `protobuf:"varint,4,opt,name=created_at_ns,json=createdAtNs,proto3" json:"created_at_ns,omitempty"`
+	AckTimeoutNs    int64                      `protobuf:"varint,5,opt,name=ack_timeout_ns,json=ackTimeoutNs,proto3" json:"ack_timeout_ns,omitempty"`
+	TakeoverPolicy  SubscriptionTakeoverPolicy `protobuf:"varint,6,opt,name=takeover_policy,json=takeoverPolicy,proto3,enum=filer_pb.SubscriptionTakeoverPolicy" json:"takeover_policy,omitempty"`
+	AckGranularity  SubscriptionAckGranularity `protobuf:"varint,7,opt,name=ack_granularity,json=ackGranularity,proto3,enum=filer_pb.SubscriptionAckGranularity" json:"ack_granularity,omitempty"`
+	TakeoverGraceNs int64                      `protobuf:"varint,8,opt,name=takeover_grace_ns,json=takeoverGraceNs,proto3" json:"takeover_grace_ns,omitempty"`
+	Active          bool                       `protobuf:"varint,9,opt,name=active,proto3" json:"active,omitempty"`
+	OwnerInstance   string                     `protobuf:"bytes,10,opt,name=owner_instance,json=ownerInstance,proto3" json:"owner_instance,omitempty"`
+	OwnerAddress    string                     `protobuf:"bytes,11,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	PathPrefix      string                     `protobuf:"bytes,12,opt,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`
+	Reclaimed       bool                       `protobuf:"varint,13,opt,name=reclaimed,proto3" json:"reclaimed,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *NamedMetadataSubscription) Reset() {
+	*x = NamedMetadataSubscription{}
+	mi := &file_filer_proto_msgTypes[97]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NamedMetadataSubscription) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NamedMetadataSubscription) ProtoMessage() {}
+
+func (x *NamedMetadataSubscription) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[97]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NamedMetadataSubscription.ProtoReflect.Descriptor instead.
+func (*NamedMetadataSubscription) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{97}
+}
+
+func (x *NamedMetadataSubscription) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NamedMetadataSubscription) GetConfirmedTsNs() int64 {
+	if x != nil {
+		return x.ConfirmedTsNs
+	}
+	return 0
+}
+
+func (x *NamedMetadataSubscription) GetLastAckAtNs() int64 {
+	if x != nil {
+		return x.LastAckAtNs
+	}
+	return 0
+}
+
+func (x *NamedMetadataSubscription) GetCreatedAtNs() int64 {
+	if x != nil {
+		return x.CreatedAtNs
+	}
+	return 0
+}
+
+func (x *NamedMetadataSubscription) GetAckTimeoutNs() int64 {
+	if x != nil {
+		return x.AckTimeoutNs
+	}
+	return 0
+}
+
+func (x *NamedMetadataSubscription) GetTakeoverPolicy() SubscriptionTakeoverPolicy {
+	if x != nil {
+		return x.TakeoverPolicy
+	}
+	return SubscriptionTakeoverPolicy_TAKEOVER_DISCONNECT_OLD
+}
+
+func (x *NamedMetadataSubscription) GetAckGranularity() SubscriptionAckGranularity {
+	if x != nil {
+		return x.AckGranularity
+	}
+	return SubscriptionAckGranularity_ACK_WATERMARK
+}
+
+func (x *NamedMetadataSubscription) GetTakeoverGraceNs() int64 {
+	if x != nil {
+		return x.TakeoverGraceNs
+	}
+	return 0
+}
+
+func (x *NamedMetadataSubscription) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *NamedMetadataSubscription) GetOwnerInstance() string {
+	if x != nil {
+		return x.OwnerInstance
+	}
+	return ""
+}
+
+func (x *NamedMetadataSubscription) GetOwnerAddress() string {
+	if x != nil {
+		return x.OwnerAddress
+	}
+	return ""
+}
+
+func (x *NamedMetadataSubscription) GetPathPrefix() string {
+	if x != nil {
+		return x.PathPrefix
+	}
+	return ""
+}
+
+func (x *NamedMetadataSubscription) GetReclaimed() bool {
+	if x != nil {
+		return x.Reclaimed
+	}
+	return false
+}
+
+type ListNamedMetadataSubscriptionsResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Subscriptions []*NamedMetadataSubscription `protobuf:"bytes,1,rep,name=subscriptions,proto3" json:"subscriptions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNamedMetadataSubscriptionsResponse) Reset() {
+	*x = ListNamedMetadataSubscriptionsResponse{}
+	mi := &file_filer_proto_msgTypes[98]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNamedMetadataSubscriptionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNamedMetadataSubscriptionsResponse) ProtoMessage() {}
+
+func (x *ListNamedMetadataSubscriptionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[98]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNamedMetadataSubscriptionsResponse.ProtoReflect.Descriptor instead.
+func (*ListNamedMetadataSubscriptionsResponse) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{98}
+}
+
+func (x *ListNamedMetadataSubscriptionsResponse) GetSubscriptions() []*NamedMetadataSubscription {
+	if x != nil {
+		return x.Subscriptions
+	}
+	return nil
+}
+
+// SubscriptionDisposition records what happened to a cursor when the server
+// reclaimed it, so the disposal is auditable after the cursor itself is gone
+// from the active set.
+type SubscriptionDisposition struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Name              string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Reason            string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // e.g. "ack_timeout"
+	AtNs              int64                  `protobuf:"varint,3,opt,name=at_ns,json=atNs,proto3" json:"at_ns,omitempty"`
+	ConfirmedTsNs     int64                  `protobuf:"varint,4,opt,name=confirmed_ts_ns,json=confirmedTsNs,proto3" json:"confirmed_ts_ns,omitempty"`               // last confirmed position before the reclaim
+	LastDeliveredTsNs int64                  `protobuf:"varint,5,opt,name=last_delivered_ts_ns,json=lastDeliveredTsNs,proto3" json:"last_delivered_ts_ns,omitempty"` // newest position the active stream had handed out, if known
+	OwnerInstance     string                 `protobuf:"bytes,6,opt,name=owner_instance,json=ownerInstance,proto3" json:"owner_instance,omitempty"`
+	OwnerAddress      string                 `protobuf:"bytes,7,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	Detail            string                 `protobuf:"bytes,8,opt,name=detail,proto3" json:"detail,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *SubscriptionDisposition) Reset() {
+	*x = SubscriptionDisposition{}
+	mi := &file_filer_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionDisposition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionDisposition) ProtoMessage() {}
+
+func (x *SubscriptionDisposition) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionDisposition.ProtoReflect.Descriptor instead.
+func (*SubscriptionDisposition) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{99}
+}
+
+func (x *SubscriptionDisposition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SubscriptionDisposition) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *SubscriptionDisposition) GetAtNs() int64 {
+	if x != nil {
+		return x.AtNs
+	}
+	return 0
+}
+
+func (x *SubscriptionDisposition) GetConfirmedTsNs() int64 {
+	if x != nil {
+		return x.ConfirmedTsNs
+	}
+	return 0
+}
+
+func (x *SubscriptionDisposition) GetLastDeliveredTsNs() int64 {
+	if x != nil {
+		return x.LastDeliveredTsNs
+	}
+	return 0
+}
+
+func (x *SubscriptionDisposition) GetOwnerInstance() string {
+	if x != nil {
+		return x.OwnerInstance
+	}
+	return ""
+}
+
+func (x *SubscriptionDisposition) GetOwnerAddress() string {
+	if x != nil {
+		return x.OwnerAddress
+	}
+	return ""
+}
+
+func (x *SubscriptionDisposition) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+type ListMetadataSubscriptionDispositionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"` // newest first; 0 returns the server-held maximum
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMetadataSubscriptionDispositionsRequest) Reset() {
+	*x = ListMetadataSubscriptionDispositionsRequest{}
+	mi := &file_filer_proto_msgTypes[100]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMetadataSubscriptionDispositionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMetadataSubscriptionDispositionsRequest) ProtoMessage() {}
+
+func (x *ListMetadataSubscriptionDispositionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[100]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMetadataSubscriptionDispositionsRequest.ProtoReflect.Descriptor instead.
+func (*ListMetadataSubscriptionDispositionsRequest) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *ListMetadataSubscriptionDispositionsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListMetadataSubscriptionDispositionsResponse struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Dispositions  []*SubscriptionDisposition `protobuf:"bytes,1,rep,name=dispositions,proto3" json:"dispositions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMetadataSubscriptionDispositionsResponse) Reset() {
+	*x = ListMetadataSubscriptionDispositionsResponse{}
+	mi := &file_filer_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMetadataSubscriptionDispositionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMetadataSubscriptionDispositionsResponse) ProtoMessage() {}
+
+func (x *ListMetadataSubscriptionDispositionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMetadataSubscriptionDispositionsResponse.ProtoReflect.Descriptor instead.
+func (*ListMetadataSubscriptionDispositionsResponse) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *ListMetadataSubscriptionDispositionsResponse) GetDispositions() []*SubscriptionDisposition {
+	if x != nil {
+		return x.Dispositions
+	}
+	return nil
+}
+
+// NamedSubscriptionCursorState is the persisted record behind one named
+// subscription cursor. Internal: stored as a filer-store KV value, not sent on
+// the wire to consumers.
+type NamedSubscriptionCursorState struct {
+	state           protoimpl.MessageState     `protogen:"open.v1"`
+	Name            string                     `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	ConfirmedTsNs   int64                      `protobuf:"varint,2,opt,name=confirmed_ts_ns,json=confirmedTsNs,proto3" json:"confirmed_ts_ns,omitempty"`
+	CreatedAtNs     int64                      `protobuf:"varint,3,opt,name=created_at_ns,json=createdAtNs,proto3" json:"created_at_ns,omitempty"`
+	LastAckAtNs     int64                      `protobuf:"varint,4,opt,name=last_ack_at_ns,json=lastAckAtNs,proto3" json:"last_ack_at_ns,omitempty"`
+	AckTimeoutNs    int64                      `protobuf:"varint,5,opt,name=ack_timeout_ns,json=ackTimeoutNs,proto3" json:"ack_timeout_ns,omitempty"`
+	TakeoverPolicy  SubscriptionTakeoverPolicy `protobuf:"varint,6,opt,name=takeover_policy,json=takeoverPolicy,proto3,enum=filer_pb.SubscriptionTakeoverPolicy" json:"takeover_policy,omitempty"`
+	AckGranularity  SubscriptionAckGranularity `protobuf:"varint,7,opt,name=ack_granularity,json=ackGranularity,proto3,enum=filer_pb.SubscriptionAckGranularity" json:"ack_granularity,omitempty"`
+	TakeoverGraceNs int64                      `protobuf:"varint,8,opt,name=takeover_grace_ns,json=takeoverGraceNs,proto3" json:"takeover_grace_ns,omitempty"`
+	PathPrefix      string                     `protobuf:"bytes,9,opt,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`
+	PathPrefixes    []string                   `protobuf:"bytes,10,rep,name=path_prefixes,json=pathPrefixes,proto3" json:"path_prefixes,omitempty"`
+	Directories     []string                   `protobuf:"bytes,11,rep,name=directories,proto3" json:"directories,omitempty"`
+	Signature       int32                      `protobuf:"varint,12,opt,name=signature,proto3" json:"signature,omitempty"`
+	// active ownership (lease guarded)
+	OwnerInstance string `protobuf:"bytes,13,opt,name=owner_instance,json=ownerInstance,proto3" json:"owner_instance,omitempty"`
+	OwnerAddress  string `protobuf:"bytes,14,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	OwnerEpoch    int64  `protobuf:"varint,15,opt,name=owner_epoch,json=ownerEpoch,proto3" json:"owner_epoch,omitempty"` // bumped on every ownership change; fences stale owners
+	LeaseUntilNs  int64  `protobuf:"varint,16,opt,name=lease_until_ns,json=leaseUntilNs,proto3" json:"lease_until_ns,omitempty"`
+	// pending takeover demand
+	TakeoverByInstance string `protobuf:"bytes,17,opt,name=takeover_by_instance,json=takeoverByInstance,proto3" json:"takeover_by_instance,omitempty"`
+	TakeoverByAddress  string `protobuf:"bytes,18,opt,name=takeover_by_address,json=takeoverByAddress,proto3" json:"takeover_by_address,omitempty"`
+	TakeoverAtNs       int64  `protobuf:"varint,19,opt,name=takeover_at_ns,json=takeoverAtNs,proto3" json:"takeover_at_ns,omitempty"`
+	DrainGraceUntilNs  int64  `protobuf:"varint,20,opt,name=drain_grace_until_ns,json=drainGraceUntilNs,proto3" json:"drain_grace_until_ns,omitempty"`
+	// newest event position the owner has handed out (persisted by the owner
+	// while draining so another filer can judge drain completion)
+	LastDeliveredTsNs int64 `protobuf:"varint,21,opt,name=last_delivered_ts_ns,json=lastDeliveredTsNs,proto3" json:"last_delivered_ts_ns,omitempty"`
+	Reclaimed         bool  `protobuf:"varint,22,opt,name=reclaimed,proto3" json:"reclaimed,omitempty"`
+	LastRenewAtNs     int64 `protobuf:"varint,23,opt,name=last_renew_at_ns,json=lastRenewAtNs,proto3" json:"last_renew_at_ns,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *NamedSubscriptionCursorState) Reset() {
+	*x = NamedSubscriptionCursorState{}
+	mi := &file_filer_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NamedSubscriptionCursorState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NamedSubscriptionCursorState) ProtoMessage() {}
+
+func (x *NamedSubscriptionCursorState) ProtoReflect() protoreflect.Message {
+	mi := &file_filer_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NamedSubscriptionCursorState.ProtoReflect.Descriptor instead.
+func (*NamedSubscriptionCursorState) Descriptor() ([]byte, []int) {
+	return file_filer_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *NamedSubscriptionCursorState) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NamedSubscriptionCursorState) GetConfirmedTsNs() int64 {
+	if x != nil {
+		return x.ConfirmedTsNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetCreatedAtNs() int64 {
+	if x != nil {
+		return x.CreatedAtNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetLastAckAtNs() int64 {
+	if x != nil {
+		return x.LastAckAtNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetAckTimeoutNs() int64 {
+	if x != nil {
+		return x.AckTimeoutNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetTakeoverPolicy() SubscriptionTakeoverPolicy {
+	if x != nil {
+		return x.TakeoverPolicy
+	}
+	return SubscriptionTakeoverPolicy_TAKEOVER_DISCONNECT_OLD
+}
+
+func (x *NamedSubscriptionCursorState) GetAckGranularity() SubscriptionAckGranularity {
+	if x != nil {
+		return x.AckGranularity
+	}
+	return SubscriptionAckGranularity_ACK_WATERMARK
+}
+
+func (x *NamedSubscriptionCursorState) GetTakeoverGraceNs() int64 {
+	if x != nil {
+		return x.TakeoverGraceNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetPathPrefix() string {
+	if x != nil {
+		return x.PathPrefix
+	}
+	return ""
+}
+
+func (x *NamedSubscriptionCursorState) GetPathPrefixes() []string {
+	if x != nil {
+		return x.PathPrefixes
+	}
+	return nil
+}
+
+func (x *NamedSubscriptionCursorState) GetDirectories() []string {
+	if x != nil {
+		return x.Directories
+	}
+	return nil
+}
+
+func (x *NamedSubscriptionCursorState) GetSignature() int32 {
+	if x != nil {
+		return x.Signature
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetOwnerInstance() string {
+	if x != nil {
+		return x.OwnerInstance
+	}
+	return ""
+}
+
+func (x *NamedSubscriptionCursorState) GetOwnerAddress() string {
+	if x != nil {
+		return x.OwnerAddress
+	}
+	return ""
+}
+
+func (x *NamedSubscriptionCursorState) GetOwnerEpoch() int64 {
+	if x != nil {
+		return x.OwnerEpoch
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetLeaseUntilNs() int64 {
+	if x != nil {
+		return x.LeaseUntilNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetTakeoverByInstance() string {
+	if x != nil {
+		return x.TakeoverByInstance
+	}
+	return ""
+}
+
+func (x *NamedSubscriptionCursorState) GetTakeoverByAddress() string {
+	if x != nil {
+		return x.TakeoverByAddress
+	}
+	return ""
+}
+
+func (x *NamedSubscriptionCursorState) GetTakeoverAtNs() int64 {
+	if x != nil {
+		return x.TakeoverAtNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetDrainGraceUntilNs() int64 {
+	if x != nil {
+		return x.DrainGraceUntilNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetLastDeliveredTsNs() int64 {
+	if x != nil {
+		return x.LastDeliveredTsNs
+	}
+	return 0
+}
+
+func (x *NamedSubscriptionCursorState) GetReclaimed() bool {
+	if x != nil {
+		return x.Reclaimed
+	}
+	return false
+}
+
+func (x *NamedSubscriptionCursorState) GetLastRenewAtNs() int64 {
+	if x != nil {
+		return x.LastRenewAtNs
+	}
+	return 0
+}
+
 // Clause is one primitive comparison. IF_ETAG_MATCH holds when the current
 // entry's ETag equals any value in etags; IF_ETAG_NOT_MATCH holds when it
 // equals none. allow_weak permits weak-comparison (ignoring the W/ prefix).
@@ -6922,7 +7820,7 @@ type WriteCondition_Clause struct {
 
 func (x *WriteCondition_Clause) Reset() {
 	*x = WriteCondition_Clause{}
-	mi := &file_filer_proto_msgTypes[95]
+	mi := &file_filer_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6934,7 +7832,7 @@ func (x *WriteCondition_Clause) String() string {
 func (*WriteCondition_Clause) ProtoMessage() {}
 
 func (x *WriteCondition_Clause) ProtoReflect() protoreflect.Message {
-	mi := &file_filer_proto_msgTypes[95]
+	mi := &file_filer_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7032,7 +7930,7 @@ type LocateBrokerResponse_Resource struct {
 
 func (x *LocateBrokerResponse_Resource) Reset() {
 	*x = LocateBrokerResponse_Resource{}
-	mi := &file_filer_proto_msgTypes[100]
+	mi := &file_filer_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7044,7 +7942,7 @@ func (x *LocateBrokerResponse_Resource) String() string {
 func (*LocateBrokerResponse_Resource) ProtoMessage() {}
 
 func (x *LocateBrokerResponse_Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_filer_proto_msgTypes[100]
+	mi := &file_filer_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7099,7 +7997,7 @@ type FilerConf_PathConf struct {
 
 func (x *FilerConf_PathConf) Reset() {
 	*x = FilerConf_PathConf{}
-	mi := &file_filer_proto_msgTypes[101]
+	mi := &file_filer_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7111,7 +8009,7 @@ func (x *FilerConf_PathConf) String() string {
 func (*FilerConf_PathConf) ProtoMessage() {}
 
 func (x *FilerConf_PathConf) ProtoReflect() protoreflect.Message {
-	mi := &file_filer_proto_msgTypes[101]
+	mi := &file_filer_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7652,7 +8550,7 @@ const file_filer_proto_rawDesc = "" +
 	"\vfiler_group\x18\r \x01(\tR\n" +
 	"filerGroup\x12#\n" +
 	"\rmajor_version\x18\x0e \x01(\x05R\fmajorVersion\x12#\n" +
-	"\rminor_version\x18\x0f \x01(\x05R\fminorVersion\"\xfd\x03\n" +
+	"\rminor_version\x18\x0f \x01(\x05R\fminorVersion\"\xfe\x06\n" +
 	"\x18SubscribeMetadataRequest\x12\x1f\n" +
 	"\vclient_name\x18\x01 \x01(\tR\n" +
 	"clientName\x12\x1f\n" +
@@ -7668,14 +8566,21 @@ const file_filer_proto_rawDesc = "" +
 	" \x03(\tR\vdirectories\x128\n" +
 	"\x18client_supports_batching\x18\v \x01(\bR\x16clientSupportsBatching\x12E\n" +
 	"\x1fclient_supports_metadata_chunks\x18\f \x01(\bR\x1cclientSupportsMetadataChunks\x12C\n" +
-	"\x1eclient_supports_idle_heartbeat\x18\r \x01(\bR\x1bclientSupportsIdleHeartbeat\"\xba\x02\n" +
+	"\x1eclient_supports_idle_heartbeat\x18\r \x01(\bR\x1bclientSupportsIdleHeartbeat\x12+\n" +
+	"\x11subscription_name\x18\x0e \x01(\tR\x10subscriptionName\x12f\n" +
+	"\x1csubscription_takeover_policy\x18\x0f \x01(\x0e2$.filer_pb.SubscriptionTakeoverPolicyR\x1asubscriptionTakeoverPolicy\x12f\n" +
+	"\x1csubscription_ack_granularity\x18\x10 \x01(\x0e2$.filer_pb.SubscriptionAckGranularityR\x1asubscriptionAckGranularity\x12=\n" +
+	"\x1bsubscription_ack_timeout_ns\x18\x11 \x01(\x03R\x18subscriptionAckTimeoutNs\x12C\n" +
+	"\x1esubscription_takeover_grace_ns\x18\x12 \x01(\x03R\x1bsubscriptionTakeoverGraceNs\"\xbb\x03\n" +
 	"\x19SubscribeMetadataResponse\x12\x1c\n" +
 	"\tdirectory\x18\x01 \x01(\tR\tdirectory\x12J\n" +
 	"\x12event_notification\x18\x02 \x01(\v2\x1b.filer_pb.EventNotificationR\x11eventNotification\x12\x13\n" +
 	"\x05ts_ns\x18\x03 \x01(\x03R\x04tsNs\x12;\n" +
 	"\x06events\x18\x04 \x03(\v2#.filer_pb.SubscribeMetadataResponseR\x06events\x12=\n" +
 	"\rlog_file_refs\x18\x05 \x03(\v2\x19.filer_pb.LogFileChunkRefR\vlogFileRefs\x12\"\n" +
-	"\rflushed_ts_ns\x18\x06 \x01(\x03R\vflushedTsNs\"C\n" +
+	"\rflushed_ts_ns\x18\x06 \x01(\x03R\vflushedTsNs\x12?\n" +
+	"\x1csubscription_confirmed_ts_ns\x18\a \x01(\x03R\x19subscriptionConfirmedTsNs\x12>\n" +
+	"\x1bsubscription_owner_instance\x18\b \x01(\tR\x19subscriptionOwnerInstance\"C\n" +
 	"\x1eListMetadataSubscribersRequest\x12!\n" +
 	"\fclient_types\x18\x01 \x03(\tR\vclientTypes\"a\n" +
 	"\x1fListMetadataSubscribersResponse\x12>\n" +
@@ -7880,7 +8785,71 @@ const file_filer_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v2\x13.filer_pb.LocationsR\x05value:\x028\x01\x1a;\n" +
 	"\rReadAuthEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*7\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"b\n" +
+	"\x1eAckMetadataSubscriptionRequest\x12+\n" +
+	"\x11subscription_name\x18\x01 \x01(\tR\x10subscriptionName\x12\x13\n" +
+	"\x05ts_ns\x18\x02 \x03(\x03R\x04tsNs\"I\n" +
+	"\x1fAckMetadataSubscriptionResponse\x12&\n" +
+	"\x0fconfirmed_ts_ns\x18\x01 \x01(\x03R\rconfirmedTsNs\"'\n" +
+	"%ListNamedMetadataSubscriptionsRequest\"\xb3\x04\n" +
+	"\x19NamedMetadataSubscription\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
+	"\x0fconfirmed_ts_ns\x18\x02 \x01(\x03R\rconfirmedTsNs\x12#\n" +
+	"\x0elast_ack_at_ns\x18\x03 \x01(\x03R\vlastAckAtNs\x12\"\n" +
+	"\rcreated_at_ns\x18\x04 \x01(\x03R\vcreatedAtNs\x12$\n" +
+	"\x0eack_timeout_ns\x18\x05 \x01(\x03R\fackTimeoutNs\x12M\n" +
+	"\x0ftakeover_policy\x18\x06 \x01(\x0e2$.filer_pb.SubscriptionTakeoverPolicyR\x0etakeoverPolicy\x12M\n" +
+	"\x0fack_granularity\x18\a \x01(\x0e2$.filer_pb.SubscriptionAckGranularityR\x0eackGranularity\x12*\n" +
+	"\x11takeover_grace_ns\x18\b \x01(\x03R\x0ftakeoverGraceNs\x12\x16\n" +
+	"\x06active\x18\t \x01(\bR\x06active\x12%\n" +
+	"\x0eowner_instance\x18\n" +
+	" \x01(\tR\rownerInstance\x12#\n" +
+	"\rowner_address\x18\v \x01(\tR\fownerAddress\x12\x1f\n" +
+	"\vpath_prefix\x18\f \x01(\tR\n" +
+	"pathPrefix\x12\x1c\n" +
+	"\treclaimed\x18\r \x01(\bR\treclaimed\"s\n" +
+	"&ListNamedMetadataSubscriptionsResponse\x12I\n" +
+	"\rsubscriptions\x18\x01 \x03(\v2#.filer_pb.NamedMetadataSubscriptionR\rsubscriptions\"\x97\x02\n" +
+	"\x17SubscriptionDisposition\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x13\n" +
+	"\x05at_ns\x18\x03 \x01(\x03R\x04atNs\x12&\n" +
+	"\x0fconfirmed_ts_ns\x18\x04 \x01(\x03R\rconfirmedTsNs\x12/\n" +
+	"\x14last_delivered_ts_ns\x18\x05 \x01(\x03R\x11lastDeliveredTsNs\x12%\n" +
+	"\x0eowner_instance\x18\x06 \x01(\tR\rownerInstance\x12#\n" +
+	"\rowner_address\x18\a \x01(\tR\fownerAddress\x12\x16\n" +
+	"\x06detail\x18\b \x01(\tR\x06detail\"C\n" +
+	"+ListMetadataSubscriptionDispositionsRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\"u\n" +
+	",ListMetadataSubscriptionDispositionsResponse\x12E\n" +
+	"\fdispositions\x18\x01 \x03(\v2!.filer_pb.SubscriptionDispositionR\fdispositions\"\xdd\a\n" +
+	"\x1cNamedSubscriptionCursorState\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12&\n" +
+	"\x0fconfirmed_ts_ns\x18\x02 \x01(\x03R\rconfirmedTsNs\x12\"\n" +
+	"\rcreated_at_ns\x18\x03 \x01(\x03R\vcreatedAtNs\x12#\n" +
+	"\x0elast_ack_at_ns\x18\x04 \x01(\x03R\vlastAckAtNs\x12$\n" +
+	"\x0eack_timeout_ns\x18\x05 \x01(\x03R\fackTimeoutNs\x12M\n" +
+	"\x0ftakeover_policy\x18\x06 \x01(\x0e2$.filer_pb.SubscriptionTakeoverPolicyR\x0etakeoverPolicy\x12M\n" +
+	"\x0fack_granularity\x18\a \x01(\x0e2$.filer_pb.SubscriptionAckGranularityR\x0eackGranularity\x12*\n" +
+	"\x11takeover_grace_ns\x18\b \x01(\x03R\x0ftakeoverGraceNs\x12\x1f\n" +
+	"\vpath_prefix\x18\t \x01(\tR\n" +
+	"pathPrefix\x12#\n" +
+	"\rpath_prefixes\x18\n" +
+	" \x03(\tR\fpathPrefixes\x12 \n" +
+	"\vdirectories\x18\v \x03(\tR\vdirectories\x12\x1c\n" +
+	"\tsignature\x18\f \x01(\x05R\tsignature\x12%\n" +
+	"\x0eowner_instance\x18\r \x01(\tR\rownerInstance\x12#\n" +
+	"\rowner_address\x18\x0e \x01(\tR\fownerAddress\x12\x1f\n" +
+	"\vowner_epoch\x18\x0f \x01(\x03R\n" +
+	"ownerEpoch\x12$\n" +
+	"\x0elease_until_ns\x18\x10 \x01(\x03R\fleaseUntilNs\x120\n" +
+	"\x14takeover_by_instance\x18\x11 \x01(\tR\x12takeoverByInstance\x12.\n" +
+	"\x13takeover_by_address\x18\x12 \x01(\tR\x11takeoverByAddress\x12$\n" +
+	"\x0etakeover_at_ns\x18\x13 \x01(\x03R\ftakeoverAtNs\x12/\n" +
+	"\x14drain_grace_until_ns\x18\x14 \x01(\x03R\x11drainGraceUntilNs\x12/\n" +
+	"\x14last_delivered_ts_ns\x18\x15 \x01(\x03R\x11lastDeliveredTsNs\x12\x1c\n" +
+	"\treclaimed\x18\x16 \x01(\bR\treclaimed\x12'\n" +
+	"\x10last_renew_at_ns\x18\x17 \x01(\x03R\rlastRenewAtNs*7\n" +
 	"\aSSEType\x12\b\n" +
 	"\x04NONE\x10\x00\x12\t\n" +
 	"\x05SSE_C\x10\x01\x12\v\n" +
@@ -7906,7 +8875,13 @@ const file_filer_proto_rawDesc = "" +
 	"\x13RELEASE_POSIX_OWNER\x10\x03\x12\x17\n" +
 	"\x13RELEASE_FLOCK_OWNER\x10\x04\x12\x0e\n" +
 	"\n" +
-	"KEEP_ALIVE\x10\x052\x9d\x18\n" +
+	"KEEP_ALIVE\x10\x05*Q\n" +
+	"\x1aSubscriptionTakeoverPolicy\x12\x1b\n" +
+	"\x17TAKEOVER_DISCONNECT_OLD\x10\x00\x12\x16\n" +
+	"\x12TAKEOVER_DRAIN_OLD\x10\x01*C\n" +
+	"\x1aSubscriptionAckGranularity\x12\x11\n" +
+	"\rACK_WATERMARK\x10\x00\x12\x12\n" +
+	"\x0eACK_INDIVIDUAL\x10\x012\xb1\x1b\n" +
 	"\fSeaweedFiler\x12g\n" +
 	"\x14LookupDirectoryEntry\x12%.filer_pb.LookupDirectoryEntryRequest\x1a&.filer_pb.LookupDirectoryEntryResponse\"\x00\x12m\n" +
 	"\x16LookupDirectoryEntries\x12'.filer_pb.LookupDirectoryEntriesRequest\x1a(.filer_pb.LookupDirectoryEntriesResponse\"\x00\x12N\n" +
@@ -7933,7 +8908,10 @@ const file_filer_proto_rawDesc = "" +
 	"\x13TraverseBfsMetadata\x12$.filer_pb.TraverseBfsMetadataRequest\x1a%.filer_pb.TraverseBfsMetadataResponse\"\x000\x01\x12`\n" +
 	"\x11SubscribeMetadata\x12\".filer_pb.SubscribeMetadataRequest\x1a#.filer_pb.SubscribeMetadataResponse\"\x000\x01\x12e\n" +
 	"\x16SubscribeLocalMetadata\x12\".filer_pb.SubscribeMetadataRequest\x1a#.filer_pb.SubscribeMetadataResponse\"\x000\x01\x12p\n" +
-	"\x17ListMetadataSubscribers\x12(.filer_pb.ListMetadataSubscribersRequest\x1a).filer_pb.ListMetadataSubscribersResponse\"\x00\x12:\n" +
+	"\x17ListMetadataSubscribers\x12(.filer_pb.ListMetadataSubscribersRequest\x1a).filer_pb.ListMetadataSubscribersResponse\"\x00\x12p\n" +
+	"\x17AckMetadataSubscription\x12(.filer_pb.AckMetadataSubscriptionRequest\x1a).filer_pb.AckMetadataSubscriptionResponse\"\x00\x12\x85\x01\n" +
+	"\x1eListNamedMetadataSubscriptions\x12/.filer_pb.ListNamedMetadataSubscriptionsRequest\x1a0.filer_pb.ListNamedMetadataSubscriptionsResponse\"\x00\x12\x97\x01\n" +
+	"$ListMetadataSubscriptionDispositions\x125.filer_pb.ListMetadataSubscriptionDispositionsRequest\x1a6.filer_pb.ListMetadataSubscriptionDispositionsResponse\"\x00\x12:\n" +
 	"\x05KvGet\x12\x16.filer_pb.KvGetRequest\x1a\x17.filer_pb.KvGetResponse\"\x00\x12:\n" +
 	"\x05KvPut\x12\x16.filer_pb.KvPutRequest\x1a\x17.filer_pb.KvPutResponse\"\x00\x12\x88\x01\n" +
 	"\x1fCacheRemoteObjectToLocalCluster\x120.filer_pb.CacheRemoteObjectToLocalClusterRequest\x1a1.filer_pb.CacheRemoteObjectToLocalClusterResponse\"\x00\x12B\n" +
@@ -7959,269 +8937,294 @@ func file_filer_proto_rawDescGZIP() []byte {
 	return file_filer_proto_rawDescData
 }
 
-var file_filer_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_filer_proto_msgTypes = make([]protoimpl.MessageInfo, 104)
+var file_filer_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_filer_proto_msgTypes = make([]protoimpl.MessageInfo, 113)
 var file_filer_proto_goTypes = []any{
-	(SSEType)(0),                                    // 0: filer_pb.SSEType
-	(FilerError)(0),                                 // 1: filer_pb.FilerError
-	(PosixLockOp)(0),                                // 2: filer_pb.PosixLockOp
-	(WriteCondition_Kind)(0),                        // 3: filer_pb.WriteCondition.Kind
-	(ObjectMutation_Type)(0),                        // 4: filer_pb.ObjectMutation.Type
-	(*LookupDirectoryEntryRequest)(nil),             // 5: filer_pb.LookupDirectoryEntryRequest
-	(*LookupDirectoryEntryResponse)(nil),            // 6: filer_pb.LookupDirectoryEntryResponse
-	(*ListEntriesRequest)(nil),                      // 7: filer_pb.ListEntriesRequest
-	(*ListEntriesResponse)(nil),                     // 8: filer_pb.ListEntriesResponse
-	(*RemoteEntry)(nil),                             // 9: filer_pb.RemoteEntry
-	(*Entry)(nil),                                   // 10: filer_pb.Entry
-	(*FullEntry)(nil),                               // 11: filer_pb.FullEntry
-	(*EventNotification)(nil),                       // 12: filer_pb.EventNotification
-	(*FileChunk)(nil),                               // 13: filer_pb.FileChunk
-	(*FileChunkManifest)(nil),                       // 14: filer_pb.FileChunkManifest
-	(*FileId)(nil),                                  // 15: filer_pb.FileId
-	(*FuseAttributes)(nil),                          // 16: filer_pb.FuseAttributes
-	(*CreateEntryRequest)(nil),                      // 17: filer_pb.CreateEntryRequest
-	(*WriteCondition)(nil),                          // 18: filer_pb.WriteCondition
-	(*ObjectMutation)(nil),                          // 19: filer_pb.ObjectMutation
-	(*Recompute)(nil),                               // 20: filer_pb.Recompute
-	(*ObjectTransactionRequest)(nil),                // 21: filer_pb.ObjectTransactionRequest
-	(*ObjectTransactionResponse)(nil),               // 22: filer_pb.ObjectTransactionResponse
-	(*PosixLockRange)(nil),                          // 23: filer_pb.PosixLockRange
-	(*PosixLockRequest)(nil),                        // 24: filer_pb.PosixLockRequest
-	(*PosixLockResponse)(nil),                       // 25: filer_pb.PosixLockResponse
-	(*ObjectTransactionBatchRequest)(nil),           // 26: filer_pb.ObjectTransactionBatchRequest
-	(*ObjectTransactionBatchResponse)(nil),          // 27: filer_pb.ObjectTransactionBatchResponse
-	(*CreateEntryResponse)(nil),                     // 28: filer_pb.CreateEntryResponse
-	(*UpdateEntryRequest)(nil),                      // 29: filer_pb.UpdateEntryRequest
-	(*UpdateEntryResponse)(nil),                     // 30: filer_pb.UpdateEntryResponse
-	(*TouchAccessTimeRequest)(nil),                  // 31: filer_pb.TouchAccessTimeRequest
-	(*TouchAccessTimeResponse)(nil),                 // 32: filer_pb.TouchAccessTimeResponse
-	(*AppendToEntryRequest)(nil),                    // 33: filer_pb.AppendToEntryRequest
-	(*AppendToEntryResponse)(nil),                   // 34: filer_pb.AppendToEntryResponse
-	(*DeleteEntryRequest)(nil),                      // 35: filer_pb.DeleteEntryRequest
-	(*DeleteEntryResponse)(nil),                     // 36: filer_pb.DeleteEntryResponse
-	(*AtomicRenameEntryRequest)(nil),                // 37: filer_pb.AtomicRenameEntryRequest
-	(*AtomicRenameEntryResponse)(nil),               // 38: filer_pb.AtomicRenameEntryResponse
-	(*StreamRenameEntryRequest)(nil),                // 39: filer_pb.StreamRenameEntryRequest
-	(*StreamRenameEntryResponse)(nil),               // 40: filer_pb.StreamRenameEntryResponse
-	(*AssignVolumeRequest)(nil),                     // 41: filer_pb.AssignVolumeRequest
-	(*AssignVolumeResponse)(nil),                    // 42: filer_pb.AssignVolumeResponse
-	(*LookupVolumeRequest)(nil),                     // 43: filer_pb.LookupVolumeRequest
-	(*Locations)(nil),                               // 44: filer_pb.Locations
-	(*Location)(nil),                                // 45: filer_pb.Location
-	(*LookupVolumeResponse)(nil),                    // 46: filer_pb.LookupVolumeResponse
-	(*Collection)(nil),                              // 47: filer_pb.Collection
-	(*CollectionListRequest)(nil),                   // 48: filer_pb.CollectionListRequest
-	(*CollectionListResponse)(nil),                  // 49: filer_pb.CollectionListResponse
-	(*DeleteCollectionRequest)(nil),                 // 50: filer_pb.DeleteCollectionRequest
-	(*DeleteCollectionResponse)(nil),                // 51: filer_pb.DeleteCollectionResponse
-	(*StatisticsRequest)(nil),                       // 52: filer_pb.StatisticsRequest
-	(*StatisticsResponse)(nil),                      // 53: filer_pb.StatisticsResponse
-	(*PingRequest)(nil),                             // 54: filer_pb.PingRequest
-	(*PingResponse)(nil),                            // 55: filer_pb.PingResponse
-	(*GetFilerConfigurationRequest)(nil),            // 56: filer_pb.GetFilerConfigurationRequest
-	(*GetFilerConfigurationResponse)(nil),           // 57: filer_pb.GetFilerConfigurationResponse
-	(*SubscribeMetadataRequest)(nil),                // 58: filer_pb.SubscribeMetadataRequest
-	(*SubscribeMetadataResponse)(nil),               // 59: filer_pb.SubscribeMetadataResponse
-	(*ListMetadataSubscribersRequest)(nil),          // 60: filer_pb.ListMetadataSubscribersRequest
-	(*ListMetadataSubscribersResponse)(nil),         // 61: filer_pb.ListMetadataSubscribersResponse
-	(*MetadataSubscriber)(nil),                      // 62: filer_pb.MetadataSubscriber
-	(*LogFileChunkRef)(nil),                         // 63: filer_pb.LogFileChunkRef
-	(*TraverseBfsMetadataRequest)(nil),              // 64: filer_pb.TraverseBfsMetadataRequest
-	(*TraverseBfsMetadataResponse)(nil),             // 65: filer_pb.TraverseBfsMetadataResponse
-	(*LogEntry)(nil),                                // 66: filer_pb.LogEntry
-	(*KeepConnectedRequest)(nil),                    // 67: filer_pb.KeepConnectedRequest
-	(*KeepConnectedResponse)(nil),                   // 68: filer_pb.KeepConnectedResponse
-	(*LocateBrokerRequest)(nil),                     // 69: filer_pb.LocateBrokerRequest
-	(*LocateBrokerResponse)(nil),                    // 70: filer_pb.LocateBrokerResponse
-	(*KvGetRequest)(nil),                            // 71: filer_pb.KvGetRequest
-	(*KvGetResponse)(nil),                           // 72: filer_pb.KvGetResponse
-	(*KvPutRequest)(nil),                            // 73: filer_pb.KvPutRequest
-	(*KvPutResponse)(nil),                           // 74: filer_pb.KvPutResponse
-	(*FilerConf)(nil),                               // 75: filer_pb.FilerConf
-	(*CacheRemoteObjectToLocalClusterRequest)(nil),  // 76: filer_pb.CacheRemoteObjectToLocalClusterRequest
-	(*CacheRemoteObjectToLocalClusterResponse)(nil), // 77: filer_pb.CacheRemoteObjectToLocalClusterResponse
-	(*LockRequest)(nil),                             // 78: filer_pb.LockRequest
-	(*LockResponse)(nil),                            // 79: filer_pb.LockResponse
-	(*UnlockRequest)(nil),                           // 80: filer_pb.UnlockRequest
-	(*UnlockResponse)(nil),                          // 81: filer_pb.UnlockResponse
-	(*FindLockOwnerRequest)(nil),                    // 82: filer_pb.FindLockOwnerRequest
-	(*FindLockOwnerResponse)(nil),                   // 83: filer_pb.FindLockOwnerResponse
-	(*Lock)(nil),                                    // 84: filer_pb.Lock
-	(*TransferLocksRequest)(nil),                    // 85: filer_pb.TransferLocksRequest
-	(*TransferLocksResponse)(nil),                   // 86: filer_pb.TransferLocksResponse
-	(*ReplicateLockRequest)(nil),                    // 87: filer_pb.ReplicateLockRequest
-	(*ReplicateLockResponse)(nil),                   // 88: filer_pb.ReplicateLockResponse
-	(*StreamMutateEntryRequest)(nil),                // 89: filer_pb.StreamMutateEntryRequest
-	(*StreamMutateEntryResponse)(nil),               // 90: filer_pb.StreamMutateEntryResponse
-	(*MountRegisterRequest)(nil),                    // 91: filer_pb.MountRegisterRequest
-	(*MountRegisterResponse)(nil),                   // 92: filer_pb.MountRegisterResponse
-	(*MountListRequest)(nil),                        // 93: filer_pb.MountListRequest
-	(*MountListResponse)(nil),                       // 94: filer_pb.MountListResponse
-	(*MountInfo)(nil),                               // 95: filer_pb.MountInfo
-	(*LookupDirectoryEntriesRequest)(nil),           // 96: filer_pb.LookupDirectoryEntriesRequest
-	(*LookupDirectoryEntryResult)(nil),              // 97: filer_pb.LookupDirectoryEntryResult
-	(*LookupDirectoryEntriesResponse)(nil),          // 98: filer_pb.LookupDirectoryEntriesResponse
-	nil,                                             // 99: filer_pb.Entry.ExtendedEntry
-	(*WriteCondition_Clause)(nil),                   // 100: filer_pb.WriteCondition.Clause
-	nil,                                             // 101: filer_pb.ObjectMutation.SetExtendedEntry
-	nil,                                             // 102: filer_pb.Recompute.CopyExtendedEntry
-	nil,                                             // 103: filer_pb.UpdateEntryRequest.ExpectedExtendedEntry
-	nil,                                             // 104: filer_pb.LookupVolumeResponse.LocationsMapEntry
-	(*LocateBrokerResponse_Resource)(nil),           // 105: filer_pb.LocateBrokerResponse.Resource
-	(*FilerConf_PathConf)(nil),                      // 106: filer_pb.FilerConf.PathConf
-	nil,                                             // 107: filer_pb.LookupDirectoryEntriesResponse.LocationsMapEntry
-	nil,                                             // 108: filer_pb.LookupDirectoryEntriesResponse.ReadAuthEntry
+	(SSEType)(0),                                         // 0: filer_pb.SSEType
+	(FilerError)(0),                                      // 1: filer_pb.FilerError
+	(PosixLockOp)(0),                                     // 2: filer_pb.PosixLockOp
+	(SubscriptionTakeoverPolicy)(0),                      // 3: filer_pb.SubscriptionTakeoverPolicy
+	(SubscriptionAckGranularity)(0),                      // 4: filer_pb.SubscriptionAckGranularity
+	(WriteCondition_Kind)(0),                             // 5: filer_pb.WriteCondition.Kind
+	(ObjectMutation_Type)(0),                             // 6: filer_pb.ObjectMutation.Type
+	(*LookupDirectoryEntryRequest)(nil),                  // 7: filer_pb.LookupDirectoryEntryRequest
+	(*LookupDirectoryEntryResponse)(nil),                 // 8: filer_pb.LookupDirectoryEntryResponse
+	(*ListEntriesRequest)(nil),                           // 9: filer_pb.ListEntriesRequest
+	(*ListEntriesResponse)(nil),                          // 10: filer_pb.ListEntriesResponse
+	(*RemoteEntry)(nil),                                  // 11: filer_pb.RemoteEntry
+	(*Entry)(nil),                                        // 12: filer_pb.Entry
+	(*FullEntry)(nil),                                    // 13: filer_pb.FullEntry
+	(*EventNotification)(nil),                            // 14: filer_pb.EventNotification
+	(*FileChunk)(nil),                                    // 15: filer_pb.FileChunk
+	(*FileChunkManifest)(nil),                            // 16: filer_pb.FileChunkManifest
+	(*FileId)(nil),                                       // 17: filer_pb.FileId
+	(*FuseAttributes)(nil),                               // 18: filer_pb.FuseAttributes
+	(*CreateEntryRequest)(nil),                           // 19: filer_pb.CreateEntryRequest
+	(*WriteCondition)(nil),                               // 20: filer_pb.WriteCondition
+	(*ObjectMutation)(nil),                               // 21: filer_pb.ObjectMutation
+	(*Recompute)(nil),                                    // 22: filer_pb.Recompute
+	(*ObjectTransactionRequest)(nil),                     // 23: filer_pb.ObjectTransactionRequest
+	(*ObjectTransactionResponse)(nil),                    // 24: filer_pb.ObjectTransactionResponse
+	(*PosixLockRange)(nil),                               // 25: filer_pb.PosixLockRange
+	(*PosixLockRequest)(nil),                             // 26: filer_pb.PosixLockRequest
+	(*PosixLockResponse)(nil),                            // 27: filer_pb.PosixLockResponse
+	(*ObjectTransactionBatchRequest)(nil),                // 28: filer_pb.ObjectTransactionBatchRequest
+	(*ObjectTransactionBatchResponse)(nil),               // 29: filer_pb.ObjectTransactionBatchResponse
+	(*CreateEntryResponse)(nil),                          // 30: filer_pb.CreateEntryResponse
+	(*UpdateEntryRequest)(nil),                           // 31: filer_pb.UpdateEntryRequest
+	(*UpdateEntryResponse)(nil),                          // 32: filer_pb.UpdateEntryResponse
+	(*TouchAccessTimeRequest)(nil),                       // 33: filer_pb.TouchAccessTimeRequest
+	(*TouchAccessTimeResponse)(nil),                      // 34: filer_pb.TouchAccessTimeResponse
+	(*AppendToEntryRequest)(nil),                         // 35: filer_pb.AppendToEntryRequest
+	(*AppendToEntryResponse)(nil),                        // 36: filer_pb.AppendToEntryResponse
+	(*DeleteEntryRequest)(nil),                           // 37: filer_pb.DeleteEntryRequest
+	(*DeleteEntryResponse)(nil),                          // 38: filer_pb.DeleteEntryResponse
+	(*AtomicRenameEntryRequest)(nil),                     // 39: filer_pb.AtomicRenameEntryRequest
+	(*AtomicRenameEntryResponse)(nil),                    // 40: filer_pb.AtomicRenameEntryResponse
+	(*StreamRenameEntryRequest)(nil),                     // 41: filer_pb.StreamRenameEntryRequest
+	(*StreamRenameEntryResponse)(nil),                    // 42: filer_pb.StreamRenameEntryResponse
+	(*AssignVolumeRequest)(nil),                          // 43: filer_pb.AssignVolumeRequest
+	(*AssignVolumeResponse)(nil),                         // 44: filer_pb.AssignVolumeResponse
+	(*LookupVolumeRequest)(nil),                          // 45: filer_pb.LookupVolumeRequest
+	(*Locations)(nil),                                    // 46: filer_pb.Locations
+	(*Location)(nil),                                     // 47: filer_pb.Location
+	(*LookupVolumeResponse)(nil),                         // 48: filer_pb.LookupVolumeResponse
+	(*Collection)(nil),                                   // 49: filer_pb.Collection
+	(*CollectionListRequest)(nil),                        // 50: filer_pb.CollectionListRequest
+	(*CollectionListResponse)(nil),                       // 51: filer_pb.CollectionListResponse
+	(*DeleteCollectionRequest)(nil),                      // 52: filer_pb.DeleteCollectionRequest
+	(*DeleteCollectionResponse)(nil),                     // 53: filer_pb.DeleteCollectionResponse
+	(*StatisticsRequest)(nil),                            // 54: filer_pb.StatisticsRequest
+	(*StatisticsResponse)(nil),                           // 55: filer_pb.StatisticsResponse
+	(*PingRequest)(nil),                                  // 56: filer_pb.PingRequest
+	(*PingResponse)(nil),                                 // 57: filer_pb.PingResponse
+	(*GetFilerConfigurationRequest)(nil),                 // 58: filer_pb.GetFilerConfigurationRequest
+	(*GetFilerConfigurationResponse)(nil),                // 59: filer_pb.GetFilerConfigurationResponse
+	(*SubscribeMetadataRequest)(nil),                     // 60: filer_pb.SubscribeMetadataRequest
+	(*SubscribeMetadataResponse)(nil),                    // 61: filer_pb.SubscribeMetadataResponse
+	(*ListMetadataSubscribersRequest)(nil),               // 62: filer_pb.ListMetadataSubscribersRequest
+	(*ListMetadataSubscribersResponse)(nil),              // 63: filer_pb.ListMetadataSubscribersResponse
+	(*MetadataSubscriber)(nil),                           // 64: filer_pb.MetadataSubscriber
+	(*LogFileChunkRef)(nil),                              // 65: filer_pb.LogFileChunkRef
+	(*TraverseBfsMetadataRequest)(nil),                   // 66: filer_pb.TraverseBfsMetadataRequest
+	(*TraverseBfsMetadataResponse)(nil),                  // 67: filer_pb.TraverseBfsMetadataResponse
+	(*LogEntry)(nil),                                     // 68: filer_pb.LogEntry
+	(*KeepConnectedRequest)(nil),                         // 69: filer_pb.KeepConnectedRequest
+	(*KeepConnectedResponse)(nil),                        // 70: filer_pb.KeepConnectedResponse
+	(*LocateBrokerRequest)(nil),                          // 71: filer_pb.LocateBrokerRequest
+	(*LocateBrokerResponse)(nil),                         // 72: filer_pb.LocateBrokerResponse
+	(*KvGetRequest)(nil),                                 // 73: filer_pb.KvGetRequest
+	(*KvGetResponse)(nil),                                // 74: filer_pb.KvGetResponse
+	(*KvPutRequest)(nil),                                 // 75: filer_pb.KvPutRequest
+	(*KvPutResponse)(nil),                                // 76: filer_pb.KvPutResponse
+	(*FilerConf)(nil),                                    // 77: filer_pb.FilerConf
+	(*CacheRemoteObjectToLocalClusterRequest)(nil),       // 78: filer_pb.CacheRemoteObjectToLocalClusterRequest
+	(*CacheRemoteObjectToLocalClusterResponse)(nil),      // 79: filer_pb.CacheRemoteObjectToLocalClusterResponse
+	(*LockRequest)(nil),                                  // 80: filer_pb.LockRequest
+	(*LockResponse)(nil),                                 // 81: filer_pb.LockResponse
+	(*UnlockRequest)(nil),                                // 82: filer_pb.UnlockRequest
+	(*UnlockResponse)(nil),                               // 83: filer_pb.UnlockResponse
+	(*FindLockOwnerRequest)(nil),                         // 84: filer_pb.FindLockOwnerRequest
+	(*FindLockOwnerResponse)(nil),                        // 85: filer_pb.FindLockOwnerResponse
+	(*Lock)(nil),                                         // 86: filer_pb.Lock
+	(*TransferLocksRequest)(nil),                         // 87: filer_pb.TransferLocksRequest
+	(*TransferLocksResponse)(nil),                        // 88: filer_pb.TransferLocksResponse
+	(*ReplicateLockRequest)(nil),                         // 89: filer_pb.ReplicateLockRequest
+	(*ReplicateLockResponse)(nil),                        // 90: filer_pb.ReplicateLockResponse
+	(*StreamMutateEntryRequest)(nil),                     // 91: filer_pb.StreamMutateEntryRequest
+	(*StreamMutateEntryResponse)(nil),                    // 92: filer_pb.StreamMutateEntryResponse
+	(*MountRegisterRequest)(nil),                         // 93: filer_pb.MountRegisterRequest
+	(*MountRegisterResponse)(nil),                        // 94: filer_pb.MountRegisterResponse
+	(*MountListRequest)(nil),                             // 95: filer_pb.MountListRequest
+	(*MountListResponse)(nil),                            // 96: filer_pb.MountListResponse
+	(*MountInfo)(nil),                                    // 97: filer_pb.MountInfo
+	(*LookupDirectoryEntriesRequest)(nil),                // 98: filer_pb.LookupDirectoryEntriesRequest
+	(*LookupDirectoryEntryResult)(nil),                   // 99: filer_pb.LookupDirectoryEntryResult
+	(*LookupDirectoryEntriesResponse)(nil),               // 100: filer_pb.LookupDirectoryEntriesResponse
+	(*AckMetadataSubscriptionRequest)(nil),               // 101: filer_pb.AckMetadataSubscriptionRequest
+	(*AckMetadataSubscriptionResponse)(nil),              // 102: filer_pb.AckMetadataSubscriptionResponse
+	(*ListNamedMetadataSubscriptionsRequest)(nil),        // 103: filer_pb.ListNamedMetadataSubscriptionsRequest
+	(*NamedMetadataSubscription)(nil),                    // 104: filer_pb.NamedMetadataSubscription
+	(*ListNamedMetadataSubscriptionsResponse)(nil),       // 105: filer_pb.ListNamedMetadataSubscriptionsResponse
+	(*SubscriptionDisposition)(nil),                      // 106: filer_pb.SubscriptionDisposition
+	(*ListMetadataSubscriptionDispositionsRequest)(nil),  // 107: filer_pb.ListMetadataSubscriptionDispositionsRequest
+	(*ListMetadataSubscriptionDispositionsResponse)(nil), // 108: filer_pb.ListMetadataSubscriptionDispositionsResponse
+	(*NamedSubscriptionCursorState)(nil),                 // 109: filer_pb.NamedSubscriptionCursorState
+	nil,                                                  // 110: filer_pb.Entry.ExtendedEntry
+	(*WriteCondition_Clause)(nil),                        // 111: filer_pb.WriteCondition.Clause
+	nil,                                                  // 112: filer_pb.ObjectMutation.SetExtendedEntry
+	nil,                                                  // 113: filer_pb.Recompute.CopyExtendedEntry
+	nil,                                                  // 114: filer_pb.UpdateEntryRequest.ExpectedExtendedEntry
+	nil,                                                  // 115: filer_pb.LookupVolumeResponse.LocationsMapEntry
+	(*LocateBrokerResponse_Resource)(nil),                // 116: filer_pb.LocateBrokerResponse.Resource
+	(*FilerConf_PathConf)(nil),                           // 117: filer_pb.FilerConf.PathConf
+	nil,                                                  // 118: filer_pb.LookupDirectoryEntriesResponse.LocationsMapEntry
+	nil,                                                  // 119: filer_pb.LookupDirectoryEntriesResponse.ReadAuthEntry
 }
 var file_filer_proto_depIdxs = []int32{
-	10,  // 0: filer_pb.LookupDirectoryEntryResponse.entry:type_name -> filer_pb.Entry
-	10,  // 1: filer_pb.ListEntriesResponse.entry:type_name -> filer_pb.Entry
-	13,  // 2: filer_pb.Entry.chunks:type_name -> filer_pb.FileChunk
-	16,  // 3: filer_pb.Entry.attributes:type_name -> filer_pb.FuseAttributes
-	99,  // 4: filer_pb.Entry.extended:type_name -> filer_pb.Entry.ExtendedEntry
-	9,   // 5: filer_pb.Entry.remote_entry:type_name -> filer_pb.RemoteEntry
-	10,  // 6: filer_pb.FullEntry.entry:type_name -> filer_pb.Entry
-	10,  // 7: filer_pb.EventNotification.old_entry:type_name -> filer_pb.Entry
-	10,  // 8: filer_pb.EventNotification.new_entry:type_name -> filer_pb.Entry
-	15,  // 9: filer_pb.FileChunk.fid:type_name -> filer_pb.FileId
-	15,  // 10: filer_pb.FileChunk.source_fid:type_name -> filer_pb.FileId
+	12,  // 0: filer_pb.LookupDirectoryEntryResponse.entry:type_name -> filer_pb.Entry
+	12,  // 1: filer_pb.ListEntriesResponse.entry:type_name -> filer_pb.Entry
+	15,  // 2: filer_pb.Entry.chunks:type_name -> filer_pb.FileChunk
+	18,  // 3: filer_pb.Entry.attributes:type_name -> filer_pb.FuseAttributes
+	110, // 4: filer_pb.Entry.extended:type_name -> filer_pb.Entry.ExtendedEntry
+	11,  // 5: filer_pb.Entry.remote_entry:type_name -> filer_pb.RemoteEntry
+	12,  // 6: filer_pb.FullEntry.entry:type_name -> filer_pb.Entry
+	12,  // 7: filer_pb.EventNotification.old_entry:type_name -> filer_pb.Entry
+	12,  // 8: filer_pb.EventNotification.new_entry:type_name -> filer_pb.Entry
+	17,  // 9: filer_pb.FileChunk.fid:type_name -> filer_pb.FileId
+	17,  // 10: filer_pb.FileChunk.source_fid:type_name -> filer_pb.FileId
 	0,   // 11: filer_pb.FileChunk.sse_type:type_name -> filer_pb.SSEType
-	13,  // 12: filer_pb.FileChunkManifest.chunks:type_name -> filer_pb.FileChunk
-	10,  // 13: filer_pb.CreateEntryRequest.entry:type_name -> filer_pb.Entry
-	18,  // 14: filer_pb.CreateEntryRequest.condition:type_name -> filer_pb.WriteCondition
-	100, // 15: filer_pb.WriteCondition.clauses:type_name -> filer_pb.WriteCondition.Clause
-	4,   // 16: filer_pb.ObjectMutation.type:type_name -> filer_pb.ObjectMutation.Type
-	10,  // 17: filer_pb.ObjectMutation.entry:type_name -> filer_pb.Entry
-	101, // 18: filer_pb.ObjectMutation.set_extended:type_name -> filer_pb.ObjectMutation.SetExtendedEntry
-	20,  // 19: filer_pb.ObjectMutation.recompute:type_name -> filer_pb.Recompute
-	102, // 20: filer_pb.Recompute.copy_extended:type_name -> filer_pb.Recompute.CopyExtendedEntry
-	18,  // 21: filer_pb.ObjectTransactionRequest.condition:type_name -> filer_pb.WriteCondition
-	19,  // 22: filer_pb.ObjectTransactionRequest.mutations:type_name -> filer_pb.ObjectMutation
+	15,  // 12: filer_pb.FileChunkManifest.chunks:type_name -> filer_pb.FileChunk
+	12,  // 13: filer_pb.CreateEntryRequest.entry:type_name -> filer_pb.Entry
+	20,  // 14: filer_pb.CreateEntryRequest.condition:type_name -> filer_pb.WriteCondition
+	111, // 15: filer_pb.WriteCondition.clauses:type_name -> filer_pb.WriteCondition.Clause
+	6,   // 16: filer_pb.ObjectMutation.type:type_name -> filer_pb.ObjectMutation.Type
+	12,  // 17: filer_pb.ObjectMutation.entry:type_name -> filer_pb.Entry
+	112, // 18: filer_pb.ObjectMutation.set_extended:type_name -> filer_pb.ObjectMutation.SetExtendedEntry
+	22,  // 19: filer_pb.ObjectMutation.recompute:type_name -> filer_pb.Recompute
+	113, // 20: filer_pb.Recompute.copy_extended:type_name -> filer_pb.Recompute.CopyExtendedEntry
+	20,  // 21: filer_pb.ObjectTransactionRequest.condition:type_name -> filer_pb.WriteCondition
+	21,  // 22: filer_pb.ObjectTransactionRequest.mutations:type_name -> filer_pb.ObjectMutation
 	1,   // 23: filer_pb.ObjectTransactionResponse.error_code:type_name -> filer_pb.FilerError
 	2,   // 24: filer_pb.PosixLockRequest.op:type_name -> filer_pb.PosixLockOp
-	23,  // 25: filer_pb.PosixLockRequest.lock:type_name -> filer_pb.PosixLockRange
-	23,  // 26: filer_pb.PosixLockRequest.locks:type_name -> filer_pb.PosixLockRange
-	23,  // 27: filer_pb.PosixLockResponse.conflict:type_name -> filer_pb.PosixLockRange
-	21,  // 28: filer_pb.ObjectTransactionBatchRequest.transactions:type_name -> filer_pb.ObjectTransactionRequest
-	22,  // 29: filer_pb.ObjectTransactionBatchResponse.responses:type_name -> filer_pb.ObjectTransactionResponse
-	59,  // 30: filer_pb.CreateEntryResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
+	25,  // 25: filer_pb.PosixLockRequest.lock:type_name -> filer_pb.PosixLockRange
+	25,  // 26: filer_pb.PosixLockRequest.locks:type_name -> filer_pb.PosixLockRange
+	25,  // 27: filer_pb.PosixLockResponse.conflict:type_name -> filer_pb.PosixLockRange
+	23,  // 28: filer_pb.ObjectTransactionBatchRequest.transactions:type_name -> filer_pb.ObjectTransactionRequest
+	24,  // 29: filer_pb.ObjectTransactionBatchResponse.responses:type_name -> filer_pb.ObjectTransactionResponse
+	61,  // 30: filer_pb.CreateEntryResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
 	1,   // 31: filer_pb.CreateEntryResponse.error_code:type_name -> filer_pb.FilerError
-	10,  // 32: filer_pb.UpdateEntryRequest.entry:type_name -> filer_pb.Entry
-	103, // 33: filer_pb.UpdateEntryRequest.expected_extended:type_name -> filer_pb.UpdateEntryRequest.ExpectedExtendedEntry
-	18,  // 34: filer_pb.UpdateEntryRequest.condition:type_name -> filer_pb.WriteCondition
-	59,  // 35: filer_pb.UpdateEntryResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
-	13,  // 36: filer_pb.AppendToEntryRequest.chunks:type_name -> filer_pb.FileChunk
-	59,  // 37: filer_pb.DeleteEntryResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
-	12,  // 38: filer_pb.StreamRenameEntryResponse.event_notification:type_name -> filer_pb.EventNotification
-	45,  // 39: filer_pb.AssignVolumeResponse.location:type_name -> filer_pb.Location
-	45,  // 40: filer_pb.AssignVolumeResponse.replicas:type_name -> filer_pb.Location
+	12,  // 32: filer_pb.UpdateEntryRequest.entry:type_name -> filer_pb.Entry
+	114, // 33: filer_pb.UpdateEntryRequest.expected_extended:type_name -> filer_pb.UpdateEntryRequest.ExpectedExtendedEntry
+	20,  // 34: filer_pb.UpdateEntryRequest.condition:type_name -> filer_pb.WriteCondition
+	61,  // 35: filer_pb.UpdateEntryResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
+	15,  // 36: filer_pb.AppendToEntryRequest.chunks:type_name -> filer_pb.FileChunk
+	61,  // 37: filer_pb.DeleteEntryResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
+	14,  // 38: filer_pb.StreamRenameEntryResponse.event_notification:type_name -> filer_pb.EventNotification
+	47,  // 39: filer_pb.AssignVolumeResponse.location:type_name -> filer_pb.Location
+	47,  // 40: filer_pb.AssignVolumeResponse.replicas:type_name -> filer_pb.Location
 	1,   // 41: filer_pb.AssignVolumeResponse.error_code:type_name -> filer_pb.FilerError
-	45,  // 42: filer_pb.Locations.locations:type_name -> filer_pb.Location
-	104, // 43: filer_pb.LookupVolumeResponse.locations_map:type_name -> filer_pb.LookupVolumeResponse.LocationsMapEntry
-	47,  // 44: filer_pb.CollectionListResponse.collections:type_name -> filer_pb.Collection
-	12,  // 45: filer_pb.SubscribeMetadataResponse.event_notification:type_name -> filer_pb.EventNotification
-	59,  // 46: filer_pb.SubscribeMetadataResponse.events:type_name -> filer_pb.SubscribeMetadataResponse
-	63,  // 47: filer_pb.SubscribeMetadataResponse.log_file_refs:type_name -> filer_pb.LogFileChunkRef
-	62,  // 48: filer_pb.ListMetadataSubscribersResponse.subscribers:type_name -> filer_pb.MetadataSubscriber
-	13,  // 49: filer_pb.LogFileChunkRef.chunks:type_name -> filer_pb.FileChunk
-	10,  // 50: filer_pb.TraverseBfsMetadataResponse.entry:type_name -> filer_pb.Entry
-	105, // 51: filer_pb.LocateBrokerResponse.resources:type_name -> filer_pb.LocateBrokerResponse.Resource
-	106, // 52: filer_pb.FilerConf.locations:type_name -> filer_pb.FilerConf.PathConf
-	10,  // 53: filer_pb.CacheRemoteObjectToLocalClusterResponse.entry:type_name -> filer_pb.Entry
-	59,  // 54: filer_pb.CacheRemoteObjectToLocalClusterResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
-	84,  // 55: filer_pb.TransferLocksRequest.locks:type_name -> filer_pb.Lock
-	17,  // 56: filer_pb.StreamMutateEntryRequest.create_request:type_name -> filer_pb.CreateEntryRequest
-	29,  // 57: filer_pb.StreamMutateEntryRequest.update_request:type_name -> filer_pb.UpdateEntryRequest
-	35,  // 58: filer_pb.StreamMutateEntryRequest.delete_request:type_name -> filer_pb.DeleteEntryRequest
-	39,  // 59: filer_pb.StreamMutateEntryRequest.rename_request:type_name -> filer_pb.StreamRenameEntryRequest
-	28,  // 60: filer_pb.StreamMutateEntryResponse.create_response:type_name -> filer_pb.CreateEntryResponse
-	30,  // 61: filer_pb.StreamMutateEntryResponse.update_response:type_name -> filer_pb.UpdateEntryResponse
-	36,  // 62: filer_pb.StreamMutateEntryResponse.delete_response:type_name -> filer_pb.DeleteEntryResponse
-	40,  // 63: filer_pb.StreamMutateEntryResponse.rename_response:type_name -> filer_pb.StreamRenameEntryResponse
-	95,  // 64: filer_pb.MountListResponse.mounts:type_name -> filer_pb.MountInfo
-	5,   // 65: filer_pb.LookupDirectoryEntriesRequest.requests:type_name -> filer_pb.LookupDirectoryEntryRequest
-	10,  // 66: filer_pb.LookupDirectoryEntryResult.entry:type_name -> filer_pb.Entry
-	97,  // 67: filer_pb.LookupDirectoryEntriesResponse.results:type_name -> filer_pb.LookupDirectoryEntryResult
-	107, // 68: filer_pb.LookupDirectoryEntriesResponse.locations_map:type_name -> filer_pb.LookupDirectoryEntriesResponse.LocationsMapEntry
-	108, // 69: filer_pb.LookupDirectoryEntriesResponse.read_auth:type_name -> filer_pb.LookupDirectoryEntriesResponse.ReadAuthEntry
-	3,   // 70: filer_pb.WriteCondition.Clause.kind:type_name -> filer_pb.WriteCondition.Kind
-	10,  // 71: filer_pb.WriteCondition.Clause.expected_entry:type_name -> filer_pb.Entry
-	44,  // 72: filer_pb.LookupVolumeResponse.LocationsMapEntry.value:type_name -> filer_pb.Locations
-	44,  // 73: filer_pb.LookupDirectoryEntriesResponse.LocationsMapEntry.value:type_name -> filer_pb.Locations
-	5,   // 74: filer_pb.SeaweedFiler.LookupDirectoryEntry:input_type -> filer_pb.LookupDirectoryEntryRequest
-	96,  // 75: filer_pb.SeaweedFiler.LookupDirectoryEntries:input_type -> filer_pb.LookupDirectoryEntriesRequest
-	7,   // 76: filer_pb.SeaweedFiler.ListEntries:input_type -> filer_pb.ListEntriesRequest
-	17,  // 77: filer_pb.SeaweedFiler.CreateEntry:input_type -> filer_pb.CreateEntryRequest
-	29,  // 78: filer_pb.SeaweedFiler.UpdateEntry:input_type -> filer_pb.UpdateEntryRequest
-	31,  // 79: filer_pb.SeaweedFiler.TouchAccessTime:input_type -> filer_pb.TouchAccessTimeRequest
-	33,  // 80: filer_pb.SeaweedFiler.AppendToEntry:input_type -> filer_pb.AppendToEntryRequest
-	35,  // 81: filer_pb.SeaweedFiler.DeleteEntry:input_type -> filer_pb.DeleteEntryRequest
-	21,  // 82: filer_pb.SeaweedFiler.ObjectTransaction:input_type -> filer_pb.ObjectTransactionRequest
-	26,  // 83: filer_pb.SeaweedFiler.ObjectTransactionBatch:input_type -> filer_pb.ObjectTransactionBatchRequest
-	24,  // 84: filer_pb.SeaweedFiler.PosixLock:input_type -> filer_pb.PosixLockRequest
-	37,  // 85: filer_pb.SeaweedFiler.AtomicRenameEntry:input_type -> filer_pb.AtomicRenameEntryRequest
-	39,  // 86: filer_pb.SeaweedFiler.StreamRenameEntry:input_type -> filer_pb.StreamRenameEntryRequest
-	89,  // 87: filer_pb.SeaweedFiler.StreamMutateEntry:input_type -> filer_pb.StreamMutateEntryRequest
-	41,  // 88: filer_pb.SeaweedFiler.AssignVolume:input_type -> filer_pb.AssignVolumeRequest
-	43,  // 89: filer_pb.SeaweedFiler.LookupVolume:input_type -> filer_pb.LookupVolumeRequest
-	48,  // 90: filer_pb.SeaweedFiler.CollectionList:input_type -> filer_pb.CollectionListRequest
-	50,  // 91: filer_pb.SeaweedFiler.DeleteCollection:input_type -> filer_pb.DeleteCollectionRequest
-	52,  // 92: filer_pb.SeaweedFiler.Statistics:input_type -> filer_pb.StatisticsRequest
-	54,  // 93: filer_pb.SeaweedFiler.Ping:input_type -> filer_pb.PingRequest
-	56,  // 94: filer_pb.SeaweedFiler.GetFilerConfiguration:input_type -> filer_pb.GetFilerConfigurationRequest
-	64,  // 95: filer_pb.SeaweedFiler.TraverseBfsMetadata:input_type -> filer_pb.TraverseBfsMetadataRequest
-	58,  // 96: filer_pb.SeaweedFiler.SubscribeMetadata:input_type -> filer_pb.SubscribeMetadataRequest
-	58,  // 97: filer_pb.SeaweedFiler.SubscribeLocalMetadata:input_type -> filer_pb.SubscribeMetadataRequest
-	60,  // 98: filer_pb.SeaweedFiler.ListMetadataSubscribers:input_type -> filer_pb.ListMetadataSubscribersRequest
-	71,  // 99: filer_pb.SeaweedFiler.KvGet:input_type -> filer_pb.KvGetRequest
-	73,  // 100: filer_pb.SeaweedFiler.KvPut:input_type -> filer_pb.KvPutRequest
-	76,  // 101: filer_pb.SeaweedFiler.CacheRemoteObjectToLocalCluster:input_type -> filer_pb.CacheRemoteObjectToLocalClusterRequest
-	78,  // 102: filer_pb.SeaweedFiler.DistributedLock:input_type -> filer_pb.LockRequest
-	80,  // 103: filer_pb.SeaweedFiler.DistributedUnlock:input_type -> filer_pb.UnlockRequest
-	82,  // 104: filer_pb.SeaweedFiler.FindLockOwner:input_type -> filer_pb.FindLockOwnerRequest
-	85,  // 105: filer_pb.SeaweedFiler.TransferLocks:input_type -> filer_pb.TransferLocksRequest
-	87,  // 106: filer_pb.SeaweedFiler.ReplicateLock:input_type -> filer_pb.ReplicateLockRequest
-	91,  // 107: filer_pb.SeaweedFiler.MountRegister:input_type -> filer_pb.MountRegisterRequest
-	93,  // 108: filer_pb.SeaweedFiler.MountList:input_type -> filer_pb.MountListRequest
-	6,   // 109: filer_pb.SeaweedFiler.LookupDirectoryEntry:output_type -> filer_pb.LookupDirectoryEntryResponse
-	98,  // 110: filer_pb.SeaweedFiler.LookupDirectoryEntries:output_type -> filer_pb.LookupDirectoryEntriesResponse
-	8,   // 111: filer_pb.SeaweedFiler.ListEntries:output_type -> filer_pb.ListEntriesResponse
-	28,  // 112: filer_pb.SeaweedFiler.CreateEntry:output_type -> filer_pb.CreateEntryResponse
-	30,  // 113: filer_pb.SeaweedFiler.UpdateEntry:output_type -> filer_pb.UpdateEntryResponse
-	32,  // 114: filer_pb.SeaweedFiler.TouchAccessTime:output_type -> filer_pb.TouchAccessTimeResponse
-	34,  // 115: filer_pb.SeaweedFiler.AppendToEntry:output_type -> filer_pb.AppendToEntryResponse
-	36,  // 116: filer_pb.SeaweedFiler.DeleteEntry:output_type -> filer_pb.DeleteEntryResponse
-	22,  // 117: filer_pb.SeaweedFiler.ObjectTransaction:output_type -> filer_pb.ObjectTransactionResponse
-	27,  // 118: filer_pb.SeaweedFiler.ObjectTransactionBatch:output_type -> filer_pb.ObjectTransactionBatchResponse
-	25,  // 119: filer_pb.SeaweedFiler.PosixLock:output_type -> filer_pb.PosixLockResponse
-	38,  // 120: filer_pb.SeaweedFiler.AtomicRenameEntry:output_type -> filer_pb.AtomicRenameEntryResponse
-	40,  // 121: filer_pb.SeaweedFiler.StreamRenameEntry:output_type -> filer_pb.StreamRenameEntryResponse
-	90,  // 122: filer_pb.SeaweedFiler.StreamMutateEntry:output_type -> filer_pb.StreamMutateEntryResponse
-	42,  // 123: filer_pb.SeaweedFiler.AssignVolume:output_type -> filer_pb.AssignVolumeResponse
-	46,  // 124: filer_pb.SeaweedFiler.LookupVolume:output_type -> filer_pb.LookupVolumeResponse
-	49,  // 125: filer_pb.SeaweedFiler.CollectionList:output_type -> filer_pb.CollectionListResponse
-	51,  // 126: filer_pb.SeaweedFiler.DeleteCollection:output_type -> filer_pb.DeleteCollectionResponse
-	53,  // 127: filer_pb.SeaweedFiler.Statistics:output_type -> filer_pb.StatisticsResponse
-	55,  // 128: filer_pb.SeaweedFiler.Ping:output_type -> filer_pb.PingResponse
-	57,  // 129: filer_pb.SeaweedFiler.GetFilerConfiguration:output_type -> filer_pb.GetFilerConfigurationResponse
-	65,  // 130: filer_pb.SeaweedFiler.TraverseBfsMetadata:output_type -> filer_pb.TraverseBfsMetadataResponse
-	59,  // 131: filer_pb.SeaweedFiler.SubscribeMetadata:output_type -> filer_pb.SubscribeMetadataResponse
-	59,  // 132: filer_pb.SeaweedFiler.SubscribeLocalMetadata:output_type -> filer_pb.SubscribeMetadataResponse
-	61,  // 133: filer_pb.SeaweedFiler.ListMetadataSubscribers:output_type -> filer_pb.ListMetadataSubscribersResponse
-	72,  // 134: filer_pb.SeaweedFiler.KvGet:output_type -> filer_pb.KvGetResponse
-	74,  // 135: filer_pb.SeaweedFiler.KvPut:output_type -> filer_pb.KvPutResponse
-	77,  // 136: filer_pb.SeaweedFiler.CacheRemoteObjectToLocalCluster:output_type -> filer_pb.CacheRemoteObjectToLocalClusterResponse
-	79,  // 137: filer_pb.SeaweedFiler.DistributedLock:output_type -> filer_pb.LockResponse
-	81,  // 138: filer_pb.SeaweedFiler.DistributedUnlock:output_type -> filer_pb.UnlockResponse
-	83,  // 139: filer_pb.SeaweedFiler.FindLockOwner:output_type -> filer_pb.FindLockOwnerResponse
-	86,  // 140: filer_pb.SeaweedFiler.TransferLocks:output_type -> filer_pb.TransferLocksResponse
-	88,  // 141: filer_pb.SeaweedFiler.ReplicateLock:output_type -> filer_pb.ReplicateLockResponse
-	92,  // 142: filer_pb.SeaweedFiler.MountRegister:output_type -> filer_pb.MountRegisterResponse
-	94,  // 143: filer_pb.SeaweedFiler.MountList:output_type -> filer_pb.MountListResponse
-	109, // [109:144] is the sub-list for method output_type
-	74,  // [74:109] is the sub-list for method input_type
-	74,  // [74:74] is the sub-list for extension type_name
-	74,  // [74:74] is the sub-list for extension extendee
-	0,   // [0:74] is the sub-list for field type_name
+	47,  // 42: filer_pb.Locations.locations:type_name -> filer_pb.Location
+	115, // 43: filer_pb.LookupVolumeResponse.locations_map:type_name -> filer_pb.LookupVolumeResponse.LocationsMapEntry
+	49,  // 44: filer_pb.CollectionListResponse.collections:type_name -> filer_pb.Collection
+	3,   // 45: filer_pb.SubscribeMetadataRequest.subscription_takeover_policy:type_name -> filer_pb.SubscriptionTakeoverPolicy
+	4,   // 46: filer_pb.SubscribeMetadataRequest.subscription_ack_granularity:type_name -> filer_pb.SubscriptionAckGranularity
+	14,  // 47: filer_pb.SubscribeMetadataResponse.event_notification:type_name -> filer_pb.EventNotification
+	61,  // 48: filer_pb.SubscribeMetadataResponse.events:type_name -> filer_pb.SubscribeMetadataResponse
+	65,  // 49: filer_pb.SubscribeMetadataResponse.log_file_refs:type_name -> filer_pb.LogFileChunkRef
+	64,  // 50: filer_pb.ListMetadataSubscribersResponse.subscribers:type_name -> filer_pb.MetadataSubscriber
+	15,  // 51: filer_pb.LogFileChunkRef.chunks:type_name -> filer_pb.FileChunk
+	12,  // 52: filer_pb.TraverseBfsMetadataResponse.entry:type_name -> filer_pb.Entry
+	116, // 53: filer_pb.LocateBrokerResponse.resources:type_name -> filer_pb.LocateBrokerResponse.Resource
+	117, // 54: filer_pb.FilerConf.locations:type_name -> filer_pb.FilerConf.PathConf
+	12,  // 55: filer_pb.CacheRemoteObjectToLocalClusterResponse.entry:type_name -> filer_pb.Entry
+	61,  // 56: filer_pb.CacheRemoteObjectToLocalClusterResponse.metadata_event:type_name -> filer_pb.SubscribeMetadataResponse
+	86,  // 57: filer_pb.TransferLocksRequest.locks:type_name -> filer_pb.Lock
+	19,  // 58: filer_pb.StreamMutateEntryRequest.create_request:type_name -> filer_pb.CreateEntryRequest
+	31,  // 59: filer_pb.StreamMutateEntryRequest.update_request:type_name -> filer_pb.UpdateEntryRequest
+	37,  // 60: filer_pb.StreamMutateEntryRequest.delete_request:type_name -> filer_pb.DeleteEntryRequest
+	41,  // 61: filer_pb.StreamMutateEntryRequest.rename_request:type_name -> filer_pb.StreamRenameEntryRequest
+	30,  // 62: filer_pb.StreamMutateEntryResponse.create_response:type_name -> filer_pb.CreateEntryResponse
+	32,  // 63: filer_pb.StreamMutateEntryResponse.update_response:type_name -> filer_pb.UpdateEntryResponse
+	38,  // 64: filer_pb.StreamMutateEntryResponse.delete_response:type_name -> filer_pb.DeleteEntryResponse
+	42,  // 65: filer_pb.StreamMutateEntryResponse.rename_response:type_name -> filer_pb.StreamRenameEntryResponse
+	97,  // 66: filer_pb.MountListResponse.mounts:type_name -> filer_pb.MountInfo
+	7,   // 67: filer_pb.LookupDirectoryEntriesRequest.requests:type_name -> filer_pb.LookupDirectoryEntryRequest
+	12,  // 68: filer_pb.LookupDirectoryEntryResult.entry:type_name -> filer_pb.Entry
+	99,  // 69: filer_pb.LookupDirectoryEntriesResponse.results:type_name -> filer_pb.LookupDirectoryEntryResult
+	118, // 70: filer_pb.LookupDirectoryEntriesResponse.locations_map:type_name -> filer_pb.LookupDirectoryEntriesResponse.LocationsMapEntry
+	119, // 71: filer_pb.LookupDirectoryEntriesResponse.read_auth:type_name -> filer_pb.LookupDirectoryEntriesResponse.ReadAuthEntry
+	3,   // 72: filer_pb.NamedMetadataSubscription.takeover_policy:type_name -> filer_pb.SubscriptionTakeoverPolicy
+	4,   // 73: filer_pb.NamedMetadataSubscription.ack_granularity:type_name -> filer_pb.SubscriptionAckGranularity
+	104, // 74: filer_pb.ListNamedMetadataSubscriptionsResponse.subscriptions:type_name -> filer_pb.NamedMetadataSubscription
+	106, // 75: filer_pb.ListMetadataSubscriptionDispositionsResponse.dispositions:type_name -> filer_pb.SubscriptionDisposition
+	3,   // 76: filer_pb.NamedSubscriptionCursorState.takeover_policy:type_name -> filer_pb.SubscriptionTakeoverPolicy
+	4,   // 77: filer_pb.NamedSubscriptionCursorState.ack_granularity:type_name -> filer_pb.SubscriptionAckGranularity
+	5,   // 78: filer_pb.WriteCondition.Clause.kind:type_name -> filer_pb.WriteCondition.Kind
+	12,  // 79: filer_pb.WriteCondition.Clause.expected_entry:type_name -> filer_pb.Entry
+	46,  // 80: filer_pb.LookupVolumeResponse.LocationsMapEntry.value:type_name -> filer_pb.Locations
+	46,  // 81: filer_pb.LookupDirectoryEntriesResponse.LocationsMapEntry.value:type_name -> filer_pb.Locations
+	7,   // 82: filer_pb.SeaweedFiler.LookupDirectoryEntry:input_type -> filer_pb.LookupDirectoryEntryRequest
+	98,  // 83: filer_pb.SeaweedFiler.LookupDirectoryEntries:input_type -> filer_pb.LookupDirectoryEntriesRequest
+	9,   // 84: filer_pb.SeaweedFiler.ListEntries:input_type -> filer_pb.ListEntriesRequest
+	19,  // 85: filer_pb.SeaweedFiler.CreateEntry:input_type -> filer_pb.CreateEntryRequest
+	31,  // 86: filer_pb.SeaweedFiler.UpdateEntry:input_type -> filer_pb.UpdateEntryRequest
+	33,  // 87: filer_pb.SeaweedFiler.TouchAccessTime:input_type -> filer_pb.TouchAccessTimeRequest
+	35,  // 88: filer_pb.SeaweedFiler.AppendToEntry:input_type -> filer_pb.AppendToEntryRequest
+	37,  // 89: filer_pb.SeaweedFiler.DeleteEntry:input_type -> filer_pb.DeleteEntryRequest
+	23,  // 90: filer_pb.SeaweedFiler.ObjectTransaction:input_type -> filer_pb.ObjectTransactionRequest
+	28,  // 91: filer_pb.SeaweedFiler.ObjectTransactionBatch:input_type -> filer_pb.ObjectTransactionBatchRequest
+	26,  // 92: filer_pb.SeaweedFiler.PosixLock:input_type -> filer_pb.PosixLockRequest
+	39,  // 93: filer_pb.SeaweedFiler.AtomicRenameEntry:input_type -> filer_pb.AtomicRenameEntryRequest
+	41,  // 94: filer_pb.SeaweedFiler.StreamRenameEntry:input_type -> filer_pb.StreamRenameEntryRequest
+	91,  // 95: filer_pb.SeaweedFiler.StreamMutateEntry:input_type -> filer_pb.StreamMutateEntryRequest
+	43,  // 96: filer_pb.SeaweedFiler.AssignVolume:input_type -> filer_pb.AssignVolumeRequest
+	45,  // 97: filer_pb.SeaweedFiler.LookupVolume:input_type -> filer_pb.LookupVolumeRequest
+	50,  // 98: filer_pb.SeaweedFiler.CollectionList:input_type -> filer_pb.CollectionListRequest
+	52,  // 99: filer_pb.SeaweedFiler.DeleteCollection:input_type -> filer_pb.DeleteCollectionRequest
+	54,  // 100: filer_pb.SeaweedFiler.Statistics:input_type -> filer_pb.StatisticsRequest
+	56,  // 101: filer_pb.SeaweedFiler.Ping:input_type -> filer_pb.PingRequest
+	58,  // 102: filer_pb.SeaweedFiler.GetFilerConfiguration:input_type -> filer_pb.GetFilerConfigurationRequest
+	66,  // 103: filer_pb.SeaweedFiler.TraverseBfsMetadata:input_type -> filer_pb.TraverseBfsMetadataRequest
+	60,  // 104: filer_pb.SeaweedFiler.SubscribeMetadata:input_type -> filer_pb.SubscribeMetadataRequest
+	60,  // 105: filer_pb.SeaweedFiler.SubscribeLocalMetadata:input_type -> filer_pb.SubscribeMetadataRequest
+	62,  // 106: filer_pb.SeaweedFiler.ListMetadataSubscribers:input_type -> filer_pb.ListMetadataSubscribersRequest
+	101, // 107: filer_pb.SeaweedFiler.AckMetadataSubscription:input_type -> filer_pb.AckMetadataSubscriptionRequest
+	103, // 108: filer_pb.SeaweedFiler.ListNamedMetadataSubscriptions:input_type -> filer_pb.ListNamedMetadataSubscriptionsRequest
+	107, // 109: filer_pb.SeaweedFiler.ListMetadataSubscriptionDispositions:input_type -> filer_pb.ListMetadataSubscriptionDispositionsRequest
+	73,  // 110: filer_pb.SeaweedFiler.KvGet:input_type -> filer_pb.KvGetRequest
+	75,  // 111: filer_pb.SeaweedFiler.KvPut:input_type -> filer_pb.KvPutRequest
+	78,  // 112: filer_pb.SeaweedFiler.CacheRemoteObjectToLocalCluster:input_type -> filer_pb.CacheRemoteObjectToLocalClusterRequest
+	80,  // 113: filer_pb.SeaweedFiler.DistributedLock:input_type -> filer_pb.LockRequest
+	82,  // 114: filer_pb.SeaweedFiler.DistributedUnlock:input_type -> filer_pb.UnlockRequest
+	84,  // 115: filer_pb.SeaweedFiler.FindLockOwner:input_type -> filer_pb.FindLockOwnerRequest
+	87,  // 116: filer_pb.SeaweedFiler.TransferLocks:input_type -> filer_pb.TransferLocksRequest
+	89,  // 117: filer_pb.SeaweedFiler.ReplicateLock:input_type -> filer_pb.ReplicateLockRequest
+	93,  // 118: filer_pb.SeaweedFiler.MountRegister:input_type -> filer_pb.MountRegisterRequest
+	95,  // 119: filer_pb.SeaweedFiler.MountList:input_type -> filer_pb.MountListRequest
+	8,   // 120: filer_pb.SeaweedFiler.LookupDirectoryEntry:output_type -> filer_pb.LookupDirectoryEntryResponse
+	100, // 121: filer_pb.SeaweedFiler.LookupDirectoryEntries:output_type -> filer_pb.LookupDirectoryEntriesResponse
+	10,  // 122: filer_pb.SeaweedFiler.ListEntries:output_type -> filer_pb.ListEntriesResponse
+	30,  // 123: filer_pb.SeaweedFiler.CreateEntry:output_type -> filer_pb.CreateEntryResponse
+	32,  // 124: filer_pb.SeaweedFiler.UpdateEntry:output_type -> filer_pb.UpdateEntryResponse
+	34,  // 125: filer_pb.SeaweedFiler.TouchAccessTime:output_type -> filer_pb.TouchAccessTimeResponse
+	36,  // 126: filer_pb.SeaweedFiler.AppendToEntry:output_type -> filer_pb.AppendToEntryResponse
+	38,  // 127: filer_pb.SeaweedFiler.DeleteEntry:output_type -> filer_pb.DeleteEntryResponse
+	24,  // 128: filer_pb.SeaweedFiler.ObjectTransaction:output_type -> filer_pb.ObjectTransactionResponse
+	29,  // 129: filer_pb.SeaweedFiler.ObjectTransactionBatch:output_type -> filer_pb.ObjectTransactionBatchResponse
+	27,  // 130: filer_pb.SeaweedFiler.PosixLock:output_type -> filer_pb.PosixLockResponse
+	40,  // 131: filer_pb.SeaweedFiler.AtomicRenameEntry:output_type -> filer_pb.AtomicRenameEntryResponse
+	42,  // 132: filer_pb.SeaweedFiler.StreamRenameEntry:output_type -> filer_pb.StreamRenameEntryResponse
+	92,  // 133: filer_pb.SeaweedFiler.StreamMutateEntry:output_type -> filer_pb.StreamMutateEntryResponse
+	44,  // 134: filer_pb.SeaweedFiler.AssignVolume:output_type -> filer_pb.AssignVolumeResponse
+	48,  // 135: filer_pb.SeaweedFiler.LookupVolume:output_type -> filer_pb.LookupVolumeResponse
+	51,  // 136: filer_pb.SeaweedFiler.CollectionList:output_type -> filer_pb.CollectionListResponse
+	53,  // 137: filer_pb.SeaweedFiler.DeleteCollection:output_type -> filer_pb.DeleteCollectionResponse
+	55,  // 138: filer_pb.SeaweedFiler.Statistics:output_type -> filer_pb.StatisticsResponse
+	57,  // 139: filer_pb.SeaweedFiler.Ping:output_type -> filer_pb.PingResponse
+	59,  // 140: filer_pb.SeaweedFiler.GetFilerConfiguration:output_type -> filer_pb.GetFilerConfigurationResponse
+	67,  // 141: filer_pb.SeaweedFiler.TraverseBfsMetadata:output_type -> filer_pb.TraverseBfsMetadataResponse
+	61,  // 142: filer_pb.SeaweedFiler.SubscribeMetadata:output_type -> filer_pb.SubscribeMetadataResponse
+	61,  // 143: filer_pb.SeaweedFiler.SubscribeLocalMetadata:output_type -> filer_pb.SubscribeMetadataResponse
+	63,  // 144: filer_pb.SeaweedFiler.ListMetadataSubscribers:output_type -> filer_pb.ListMetadataSubscribersResponse
+	102, // 145: filer_pb.SeaweedFiler.AckMetadataSubscription:output_type -> filer_pb.AckMetadataSubscriptionResponse
+	105, // 146: filer_pb.SeaweedFiler.ListNamedMetadataSubscriptions:output_type -> filer_pb.ListNamedMetadataSubscriptionsResponse
+	108, // 147: filer_pb.SeaweedFiler.ListMetadataSubscriptionDispositions:output_type -> filer_pb.ListMetadataSubscriptionDispositionsResponse
+	74,  // 148: filer_pb.SeaweedFiler.KvGet:output_type -> filer_pb.KvGetResponse
+	76,  // 149: filer_pb.SeaweedFiler.KvPut:output_type -> filer_pb.KvPutResponse
+	79,  // 150: filer_pb.SeaweedFiler.CacheRemoteObjectToLocalCluster:output_type -> filer_pb.CacheRemoteObjectToLocalClusterResponse
+	81,  // 151: filer_pb.SeaweedFiler.DistributedLock:output_type -> filer_pb.LockResponse
+	83,  // 152: filer_pb.SeaweedFiler.DistributedUnlock:output_type -> filer_pb.UnlockResponse
+	85,  // 153: filer_pb.SeaweedFiler.FindLockOwner:output_type -> filer_pb.FindLockOwnerResponse
+	88,  // 154: filer_pb.SeaweedFiler.TransferLocks:output_type -> filer_pb.TransferLocksResponse
+	90,  // 155: filer_pb.SeaweedFiler.ReplicateLock:output_type -> filer_pb.ReplicateLockResponse
+	94,  // 156: filer_pb.SeaweedFiler.MountRegister:output_type -> filer_pb.MountRegisterResponse
+	96,  // 157: filer_pb.SeaweedFiler.MountList:output_type -> filer_pb.MountListResponse
+	120, // [120:158] is the sub-list for method output_type
+	82,  // [82:120] is the sub-list for method input_type
+	82,  // [82:82] is the sub-list for extension type_name
+	82,  // [82:82] is the sub-list for extension extendee
+	0,   // [0:82] is the sub-list for field type_name
 }
 
 func init() { file_filer_proto_init() }
@@ -8242,14 +9245,14 @@ func file_filer_proto_init() {
 		(*StreamMutateEntryResponse_DeleteResponse)(nil),
 		(*StreamMutateEntryResponse_RenameResponse)(nil),
 	}
-	file_filer_proto_msgTypes[101].OneofWrappers = []any{}
+	file_filer_proto_msgTypes[110].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_filer_proto_rawDesc), len(file_filer_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   104,
+			NumEnums:      7,
+			NumMessages:   113,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

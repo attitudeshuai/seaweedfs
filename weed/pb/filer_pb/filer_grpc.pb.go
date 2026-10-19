@@ -19,41 +19,44 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SeaweedFiler_LookupDirectoryEntry_FullMethodName            = "/filer_pb.SeaweedFiler/LookupDirectoryEntry"
-	SeaweedFiler_LookupDirectoryEntries_FullMethodName          = "/filer_pb.SeaweedFiler/LookupDirectoryEntries"
-	SeaweedFiler_ListEntries_FullMethodName                     = "/filer_pb.SeaweedFiler/ListEntries"
-	SeaweedFiler_CreateEntry_FullMethodName                     = "/filer_pb.SeaweedFiler/CreateEntry"
-	SeaweedFiler_UpdateEntry_FullMethodName                     = "/filer_pb.SeaweedFiler/UpdateEntry"
-	SeaweedFiler_TouchAccessTime_FullMethodName                 = "/filer_pb.SeaweedFiler/TouchAccessTime"
-	SeaweedFiler_AppendToEntry_FullMethodName                   = "/filer_pb.SeaweedFiler/AppendToEntry"
-	SeaweedFiler_DeleteEntry_FullMethodName                     = "/filer_pb.SeaweedFiler/DeleteEntry"
-	SeaweedFiler_ObjectTransaction_FullMethodName               = "/filer_pb.SeaweedFiler/ObjectTransaction"
-	SeaweedFiler_ObjectTransactionBatch_FullMethodName          = "/filer_pb.SeaweedFiler/ObjectTransactionBatch"
-	SeaweedFiler_PosixLock_FullMethodName                       = "/filer_pb.SeaweedFiler/PosixLock"
-	SeaweedFiler_AtomicRenameEntry_FullMethodName               = "/filer_pb.SeaweedFiler/AtomicRenameEntry"
-	SeaweedFiler_StreamRenameEntry_FullMethodName               = "/filer_pb.SeaweedFiler/StreamRenameEntry"
-	SeaweedFiler_StreamMutateEntry_FullMethodName               = "/filer_pb.SeaweedFiler/StreamMutateEntry"
-	SeaweedFiler_AssignVolume_FullMethodName                    = "/filer_pb.SeaweedFiler/AssignVolume"
-	SeaweedFiler_LookupVolume_FullMethodName                    = "/filer_pb.SeaweedFiler/LookupVolume"
-	SeaweedFiler_CollectionList_FullMethodName                  = "/filer_pb.SeaweedFiler/CollectionList"
-	SeaweedFiler_DeleteCollection_FullMethodName                = "/filer_pb.SeaweedFiler/DeleteCollection"
-	SeaweedFiler_Statistics_FullMethodName                      = "/filer_pb.SeaweedFiler/Statistics"
-	SeaweedFiler_Ping_FullMethodName                            = "/filer_pb.SeaweedFiler/Ping"
-	SeaweedFiler_GetFilerConfiguration_FullMethodName           = "/filer_pb.SeaweedFiler/GetFilerConfiguration"
-	SeaweedFiler_TraverseBfsMetadata_FullMethodName             = "/filer_pb.SeaweedFiler/TraverseBfsMetadata"
-	SeaweedFiler_SubscribeMetadata_FullMethodName               = "/filer_pb.SeaweedFiler/SubscribeMetadata"
-	SeaweedFiler_SubscribeLocalMetadata_FullMethodName          = "/filer_pb.SeaweedFiler/SubscribeLocalMetadata"
-	SeaweedFiler_ListMetadataSubscribers_FullMethodName         = "/filer_pb.SeaweedFiler/ListMetadataSubscribers"
-	SeaweedFiler_KvGet_FullMethodName                           = "/filer_pb.SeaweedFiler/KvGet"
-	SeaweedFiler_KvPut_FullMethodName                           = "/filer_pb.SeaweedFiler/KvPut"
-	SeaweedFiler_CacheRemoteObjectToLocalCluster_FullMethodName = "/filer_pb.SeaweedFiler/CacheRemoteObjectToLocalCluster"
-	SeaweedFiler_DistributedLock_FullMethodName                 = "/filer_pb.SeaweedFiler/DistributedLock"
-	SeaweedFiler_DistributedUnlock_FullMethodName               = "/filer_pb.SeaweedFiler/DistributedUnlock"
-	SeaweedFiler_FindLockOwner_FullMethodName                   = "/filer_pb.SeaweedFiler/FindLockOwner"
-	SeaweedFiler_TransferLocks_FullMethodName                   = "/filer_pb.SeaweedFiler/TransferLocks"
-	SeaweedFiler_ReplicateLock_FullMethodName                   = "/filer_pb.SeaweedFiler/ReplicateLock"
-	SeaweedFiler_MountRegister_FullMethodName                   = "/filer_pb.SeaweedFiler/MountRegister"
-	SeaweedFiler_MountList_FullMethodName                       = "/filer_pb.SeaweedFiler/MountList"
+	SeaweedFiler_LookupDirectoryEntry_FullMethodName                 = "/filer_pb.SeaweedFiler/LookupDirectoryEntry"
+	SeaweedFiler_LookupDirectoryEntries_FullMethodName               = "/filer_pb.SeaweedFiler/LookupDirectoryEntries"
+	SeaweedFiler_ListEntries_FullMethodName                          = "/filer_pb.SeaweedFiler/ListEntries"
+	SeaweedFiler_CreateEntry_FullMethodName                          = "/filer_pb.SeaweedFiler/CreateEntry"
+	SeaweedFiler_UpdateEntry_FullMethodName                          = "/filer_pb.SeaweedFiler/UpdateEntry"
+	SeaweedFiler_TouchAccessTime_FullMethodName                      = "/filer_pb.SeaweedFiler/TouchAccessTime"
+	SeaweedFiler_AppendToEntry_FullMethodName                        = "/filer_pb.SeaweedFiler/AppendToEntry"
+	SeaweedFiler_DeleteEntry_FullMethodName                          = "/filer_pb.SeaweedFiler/DeleteEntry"
+	SeaweedFiler_ObjectTransaction_FullMethodName                    = "/filer_pb.SeaweedFiler/ObjectTransaction"
+	SeaweedFiler_ObjectTransactionBatch_FullMethodName               = "/filer_pb.SeaweedFiler/ObjectTransactionBatch"
+	SeaweedFiler_PosixLock_FullMethodName                            = "/filer_pb.SeaweedFiler/PosixLock"
+	SeaweedFiler_AtomicRenameEntry_FullMethodName                    = "/filer_pb.SeaweedFiler/AtomicRenameEntry"
+	SeaweedFiler_StreamRenameEntry_FullMethodName                    = "/filer_pb.SeaweedFiler/StreamRenameEntry"
+	SeaweedFiler_StreamMutateEntry_FullMethodName                    = "/filer_pb.SeaweedFiler/StreamMutateEntry"
+	SeaweedFiler_AssignVolume_FullMethodName                         = "/filer_pb.SeaweedFiler/AssignVolume"
+	SeaweedFiler_LookupVolume_FullMethodName                         = "/filer_pb.SeaweedFiler/LookupVolume"
+	SeaweedFiler_CollectionList_FullMethodName                       = "/filer_pb.SeaweedFiler/CollectionList"
+	SeaweedFiler_DeleteCollection_FullMethodName                     = "/filer_pb.SeaweedFiler/DeleteCollection"
+	SeaweedFiler_Statistics_FullMethodName                           = "/filer_pb.SeaweedFiler/Statistics"
+	SeaweedFiler_Ping_FullMethodName                                 = "/filer_pb.SeaweedFiler/Ping"
+	SeaweedFiler_GetFilerConfiguration_FullMethodName                = "/filer_pb.SeaweedFiler/GetFilerConfiguration"
+	SeaweedFiler_TraverseBfsMetadata_FullMethodName                  = "/filer_pb.SeaweedFiler/TraverseBfsMetadata"
+	SeaweedFiler_SubscribeMetadata_FullMethodName                    = "/filer_pb.SeaweedFiler/SubscribeMetadata"
+	SeaweedFiler_SubscribeLocalMetadata_FullMethodName               = "/filer_pb.SeaweedFiler/SubscribeLocalMetadata"
+	SeaweedFiler_ListMetadataSubscribers_FullMethodName              = "/filer_pb.SeaweedFiler/ListMetadataSubscribers"
+	SeaweedFiler_AckMetadataSubscription_FullMethodName              = "/filer_pb.SeaweedFiler/AckMetadataSubscription"
+	SeaweedFiler_ListNamedMetadataSubscriptions_FullMethodName       = "/filer_pb.SeaweedFiler/ListNamedMetadataSubscriptions"
+	SeaweedFiler_ListMetadataSubscriptionDispositions_FullMethodName = "/filer_pb.SeaweedFiler/ListMetadataSubscriptionDispositions"
+	SeaweedFiler_KvGet_FullMethodName                                = "/filer_pb.SeaweedFiler/KvGet"
+	SeaweedFiler_KvPut_FullMethodName                                = "/filer_pb.SeaweedFiler/KvPut"
+	SeaweedFiler_CacheRemoteObjectToLocalCluster_FullMethodName      = "/filer_pb.SeaweedFiler/CacheRemoteObjectToLocalCluster"
+	SeaweedFiler_DistributedLock_FullMethodName                      = "/filer_pb.SeaweedFiler/DistributedLock"
+	SeaweedFiler_DistributedUnlock_FullMethodName                    = "/filer_pb.SeaweedFiler/DistributedUnlock"
+	SeaweedFiler_FindLockOwner_FullMethodName                        = "/filer_pb.SeaweedFiler/FindLockOwner"
+	SeaweedFiler_TransferLocks_FullMethodName                        = "/filer_pb.SeaweedFiler/TransferLocks"
+	SeaweedFiler_ReplicateLock_FullMethodName                        = "/filer_pb.SeaweedFiler/ReplicateLock"
+	SeaweedFiler_MountRegister_FullMethodName                        = "/filer_pb.SeaweedFiler/MountRegister"
+	SeaweedFiler_MountList_FullMethodName                            = "/filer_pb.SeaweedFiler/MountList"
 )
 
 // SeaweedFilerClient is the client API for SeaweedFiler service.
@@ -87,6 +90,13 @@ type SeaweedFilerClient interface {
 	// List the metadata subscribers currently connected to this filer
 	// (FUSE mounts, S3, filer.sync, peer filers, ...).
 	ListMetadataSubscribers(ctx context.Context, in *ListMetadataSubscribersRequest, opts ...grpc.CallOption) (*ListMetadataSubscribersResponse, error)
+	// Confirm consumption progress of a named, server-managed subscription
+	// cursor. Anonymous (unnamed) subscriptions are unaffected.
+	AckMetadataSubscription(ctx context.Context, in *AckMetadataSubscriptionRequest, opts ...grpc.CallOption) (*AckMetadataSubscriptionResponse, error)
+	// List the named subscription cursors this filer cluster persists.
+	ListNamedMetadataSubscriptions(ctx context.Context, in *ListNamedMetadataSubscriptionsRequest, opts ...grpc.CallOption) (*ListNamedMetadataSubscriptionsResponse, error)
+	// List the disposal records left when named subscriptions were reclaimed.
+	ListMetadataSubscriptionDispositions(ctx context.Context, in *ListMetadataSubscriptionDispositionsRequest, opts ...grpc.CallOption) (*ListMetadataSubscriptionDispositionsResponse, error)
 	KvGet(ctx context.Context, in *KvGetRequest, opts ...grpc.CallOption) (*KvGetResponse, error)
 	KvPut(ctx context.Context, in *KvPutRequest, opts ...grpc.CallOption) (*KvPutResponse, error)
 	CacheRemoteObjectToLocalCluster(ctx context.Context, in *CacheRemoteObjectToLocalClusterRequest, opts ...grpc.CallOption) (*CacheRemoteObjectToLocalClusterResponse, error)
@@ -408,6 +418,36 @@ func (c *seaweedFilerClient) ListMetadataSubscribers(ctx context.Context, in *Li
 	return out, nil
 }
 
+func (c *seaweedFilerClient) AckMetadataSubscription(ctx context.Context, in *AckMetadataSubscriptionRequest, opts ...grpc.CallOption) (*AckMetadataSubscriptionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AckMetadataSubscriptionResponse)
+	err := c.cc.Invoke(ctx, SeaweedFiler_AckMetadataSubscription_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *seaweedFilerClient) ListNamedMetadataSubscriptions(ctx context.Context, in *ListNamedMetadataSubscriptionsRequest, opts ...grpc.CallOption) (*ListNamedMetadataSubscriptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNamedMetadataSubscriptionsResponse)
+	err := c.cc.Invoke(ctx, SeaweedFiler_ListNamedMetadataSubscriptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *seaweedFilerClient) ListMetadataSubscriptionDispositions(ctx context.Context, in *ListMetadataSubscriptionDispositionsRequest, opts ...grpc.CallOption) (*ListMetadataSubscriptionDispositionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMetadataSubscriptionDispositionsResponse)
+	err := c.cc.Invoke(ctx, SeaweedFiler_ListMetadataSubscriptionDispositions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *seaweedFilerClient) KvGet(ctx context.Context, in *KvGetRequest, opts ...grpc.CallOption) (*KvGetResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KvGetResponse)
@@ -539,6 +579,13 @@ type SeaweedFilerServer interface {
 	// List the metadata subscribers currently connected to this filer
 	// (FUSE mounts, S3, filer.sync, peer filers, ...).
 	ListMetadataSubscribers(context.Context, *ListMetadataSubscribersRequest) (*ListMetadataSubscribersResponse, error)
+	// Confirm consumption progress of a named, server-managed subscription
+	// cursor. Anonymous (unnamed) subscriptions are unaffected.
+	AckMetadataSubscription(context.Context, *AckMetadataSubscriptionRequest) (*AckMetadataSubscriptionResponse, error)
+	// List the named subscription cursors this filer cluster persists.
+	ListNamedMetadataSubscriptions(context.Context, *ListNamedMetadataSubscriptionsRequest) (*ListNamedMetadataSubscriptionsResponse, error)
+	// List the disposal records left when named subscriptions were reclaimed.
+	ListMetadataSubscriptionDispositions(context.Context, *ListMetadataSubscriptionDispositionsRequest) (*ListMetadataSubscriptionDispositionsResponse, error)
 	KvGet(context.Context, *KvGetRequest) (*KvGetResponse, error)
 	KvPut(context.Context, *KvPutRequest) (*KvPutResponse, error)
 	CacheRemoteObjectToLocalCluster(context.Context, *CacheRemoteObjectToLocalClusterRequest) (*CacheRemoteObjectToLocalClusterResponse, error)
@@ -636,6 +683,15 @@ func (UnimplementedSeaweedFilerServer) SubscribeLocalMetadata(*SubscribeMetadata
 }
 func (UnimplementedSeaweedFilerServer) ListMetadataSubscribers(context.Context, *ListMetadataSubscribersRequest) (*ListMetadataSubscribersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMetadataSubscribers not implemented")
+}
+func (UnimplementedSeaweedFilerServer) AckMetadataSubscription(context.Context, *AckMetadataSubscriptionRequest) (*AckMetadataSubscriptionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AckMetadataSubscription not implemented")
+}
+func (UnimplementedSeaweedFilerServer) ListNamedMetadataSubscriptions(context.Context, *ListNamedMetadataSubscriptionsRequest) (*ListNamedMetadataSubscriptionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNamedMetadataSubscriptions not implemented")
+}
+func (UnimplementedSeaweedFilerServer) ListMetadataSubscriptionDispositions(context.Context, *ListMetadataSubscriptionDispositionsRequest) (*ListMetadataSubscriptionDispositionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMetadataSubscriptionDispositions not implemented")
 }
 func (UnimplementedSeaweedFilerServer) KvGet(context.Context, *KvGetRequest) (*KvGetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method KvGet not implemented")
@@ -1092,6 +1148,60 @@ func _SeaweedFiler_ListMetadataSubscribers_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SeaweedFiler_AckMetadataSubscription_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AckMetadataSubscriptionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SeaweedFilerServer).AckMetadataSubscription(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SeaweedFiler_AckMetadataSubscription_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SeaweedFilerServer).AckMetadataSubscription(ctx, req.(*AckMetadataSubscriptionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SeaweedFiler_ListNamedMetadataSubscriptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNamedMetadataSubscriptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SeaweedFilerServer).ListNamedMetadataSubscriptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SeaweedFiler_ListNamedMetadataSubscriptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SeaweedFilerServer).ListNamedMetadataSubscriptions(ctx, req.(*ListNamedMetadataSubscriptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SeaweedFiler_ListMetadataSubscriptionDispositions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMetadataSubscriptionDispositionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SeaweedFilerServer).ListMetadataSubscriptionDispositions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SeaweedFiler_ListMetadataSubscriptionDispositions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SeaweedFilerServer).ListMetadataSubscriptionDispositions(ctx, req.(*ListMetadataSubscriptionDispositionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SeaweedFiler_KvGet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(KvGetRequest)
 	if err := dec(in); err != nil {
@@ -1354,6 +1464,18 @@ var SeaweedFiler_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMetadataSubscribers",
 			Handler:    _SeaweedFiler_ListMetadataSubscribers_Handler,
+		},
+		{
+			MethodName: "AckMetadataSubscription",
+			Handler:    _SeaweedFiler_AckMetadataSubscription_Handler,
+		},
+		{
+			MethodName: "ListNamedMetadataSubscriptions",
+			Handler:    _SeaweedFiler_ListNamedMetadataSubscriptions_Handler,
+		},
+		{
+			MethodName: "ListMetadataSubscriptionDispositions",
+			Handler:    _SeaweedFiler_ListMetadataSubscriptionDispositions_Handler,
 		},
 		{
 			MethodName: "KvGet",

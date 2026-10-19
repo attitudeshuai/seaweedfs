@@ -190,6 +190,11 @@ type FilerServer struct {
 	// from it as well as from its stream.
 	subscriptionsStopped context.Context
 	stopSubscriptions    context.CancelFunc
+
+	// namedCursors owns server-managed named metadata-subscription cursors.
+	// It is created lazily on the first subscription carrying a name.
+	namedCursorsLock sync.Mutex
+	namedCursors     *namedCursorManager
 	// posixLockReadyAt is the unix-nanos when this filer began serving POSIX
 	// locks. For posixLockWarmup after it, the owner defers would-be grants while
 	// mounts re-assert, so a (re)started owner does not double-grant from empty
@@ -426,6 +431,12 @@ func (fs *FilerServer) checkWithMaster() {
 // This prevents data corruption when the process receives SIGTERM during active uploads.
 func (fs *FilerServer) Shutdown() {
 	glog.V(0).Infof("Shutting down filer")
+	fs.namedCursorsLock.Lock()
+	if fs.namedCursors != nil {
+		fs.namedCursors.Stop()
+		fs.namedCursors = nil
+	}
+	fs.namedCursorsLock.Unlock()
 	if fs.posixLockSweeperStop != nil {
 		close(fs.posixLockSweeperStop)
 	}

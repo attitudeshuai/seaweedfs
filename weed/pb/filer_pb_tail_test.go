@@ -439,6 +439,80 @@ func TestFilerSyncReconnectReadsWatermarkEachSubscribe(t *testing.T) {
 	}
 }
 
+// namedFilerClient serves a scripted stream and records cursor acks.
+type namedFilerClient struct {
+	filer_pb.SeaweedFilerClient
+	stream *fakeSubscribeStream
+	acks   [][]int64
+}
+
+func (c *namedFilerClient) SubscribeMetadata(ctx context.Context, in *filer_pb.SubscribeMetadataRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[filer_pb.SubscribeMetadataResponse], error) {
+	return c.stream, nil
+}
+
+func (c *namedFilerClient) AckMetadataSubscription(ctx context.Context, in *filer_pb.AckMetadataSubscriptionRequest, opts ...grpc.CallOption) (*filer_pb.AckMetadataSubscriptionResponse, error) {
+	c.acks = append(c.acks, append([]int64(nil), in.TsNs...))
+	return &filer_pb.AckMetadataSubscriptionResponse{ConfirmedTsNs: in.TsNs[len(in.TsNs)-1]}, nil
+}
+
+// TestNamedSubscriptionMarkerAndAcks: the start marker is neither an event nor
+// a heartbeat; it fires OnSubscriptionStart with the server token, and every
+// event afterwards is confirmed back with its timestamp (a batch in one ack).
+func TestNamedSubscriptionMarkerAndAcks(t *testing.T) {
+	const confirmedTs = int64(700)
+	const ts1 = int64(701)
+	const ts2 = int64(702)
+
+	var startedOwner string
+	var startedAt int64
+	var heartbeats, events int
+
+	option := &MetadataFollowOption{
+		ClientName:        "named-consumer",
+		StartTsNs:         1, // ignored on reconnect: server overrides
+		NamedSubscription: "jobs/sync-queue",
+		OnSubscriptionStart: func(ownerInstance string, confirmedTsNs int64) {
+			startedOwner, startedAt = ownerInstance, confirmedTsNs
+		},
+		OnIdleHeartbeat: func(int64) { heartbeats++ },
+		EventErrorType:  DontLogError,
+	}
+	stream := &fakeSubscribeStream{
+		responses: []*filer_pb.SubscribeMetadataResponse{
+			{TsNs: confirmedTs, SubscriptionConfirmedTsNs: confirmedTs, SubscriptionOwnerInstance: "filer-a#owner-9"},
+			{
+				Directory:         "/watched",
+				TsNs:              ts1,
+				EventNotification: &filer_pb.EventNotification{NewEntry: &filer_pb.Entry{Name: "a"}},
+				Events: []*filer_pb.SubscribeMetadataResponse{
+					{Directory: "/watched", TsNs: ts2, EventNotification: &filer_pb.EventNotification{NewEntry: &filer_pb.Entry{Name: "b"}}},
+				},
+			},
+		},
+	}
+	client := &namedFilerClient{stream: stream}
+	fn := makeSubscribeMetadataFunc(option, func(resp *filer_pb.SubscribeMetadataResponse) error {
+		events++
+		return nil
+	})
+	if err := fn(client); err != nil {
+		t.Fatalf("follow: %v", err)
+	}
+
+	if startedOwner != "filer-a#owner-9" || startedAt != confirmedTs {
+		t.Fatalf("OnSubscriptionStart = (%q,%d), want (filer-a#owner-9,%d)", startedOwner, startedAt, confirmedTs)
+	}
+	if events != 2 {
+		t.Fatalf("processed events = %d, want 2", events)
+	}
+	if heartbeats != 0 {
+		t.Fatalf("start marker must not fire heartbeat, got %d", heartbeats)
+	}
+	if len(client.acks) != 1 || len(client.acks[0]) != 2 || client.acks[0][0] != ts1 || client.acks[0][1] != ts2 {
+		t.Fatalf("acks = %v, want one batch [%d %d]", client.acks, ts1, ts2)
+	}
+}
+
 // blockingFilerClient returns a stream whose Recv parks until the subscribe
 // context ends, standing in for a quiet source stream during a sink outage.
 type blockingFilerClient struct {

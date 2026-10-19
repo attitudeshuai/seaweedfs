@@ -455,7 +455,7 @@ func (fs *FilerServer) parkOnGap(ctx context.Context, req *filer_pb.SubscribeMet
 	if req.UntilNs != 0 && cursor.Time.UnixNano() >= req.UntilNs {
 		return 0, false, true, false
 	}
-	if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+	if !fs.subscriptionProceed(ctx, req) {
 		return 0, false, true, false
 	}
 	gapStall.park(cursor.Time, reason)
@@ -493,7 +493,7 @@ func (fs *FilerServer) parkOnGap(ctx context.Context, req *filer_pb.SubscribeMet
 			return 0, false, false, true
 		case <-retry:
 		}
-		if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+		if !fs.subscriptionProceed(ctx, req) {
 			return 0, false, true, false
 		}
 		return 0, false, false, false
@@ -645,6 +645,19 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 	defer func() { err = fs.endOfSubscription(stream.Context(), err) }()
 	peerAddress := findClientAddress(ctx, 0)
 
+	// A named subscription hands start-position ownership to the server. The
+	// begin call enforces the single-active-stream rule (blocking for a drain
+	// takeover) and rewrites SinceNs to the persisted confirmed position;
+	// anonymous subscriptions skip it entirely and keep self-reported SinceNs.
+	cursorMgr, cursorActive, cursorStart, cursorErr := fs.beginNamedSubscription(ctx, req, peerAddress)
+	if cursorErr != nil {
+		return cursorErr
+	}
+	if cursorActive != nil {
+		defer cursorMgr.release(context.WithoutCancel(stream.Context()), cursorActive)
+		req.SinceNs = cursorStart
+	}
+
 	isReplacing, alreadyKnown, clientName := fs.addClient("", req.ClientName, peerAddress, req.PathPrefix, req.ClientId, req.ClientEpoch)
 	if isReplacing {
 	} else if alreadyKnown {
@@ -669,9 +682,18 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 	// had already arrived and been delivered).
 	diskAnchorTsNs := req.SinceNs
 
-	sender := newPipelinedSender(ctx, stream, 1024, req.ClientSupportsBatching)
+	sender := newPipelinedSender(ctx, fs.namedDeliveryStream(cursorMgr, cursorActive, stream), 1024, req.ClientSupportsBatching)
 	defer sender.Close()
 
+	if cursorActive != nil {
+		if err := sender.Send(&filer_pb.SubscribeMetadataResponse{
+			TsNs:                      req.SinceNs,
+			SubscriptionConfirmedTsNs: req.SinceNs,
+			SubscriptionOwnerInstance: cursorActive.instance,
+		}); err != nil {
+			return err
+		}
+	}
 	// Register for instant notification when new data arrives in the aggregated log buffer.
 	// Used to replace the 1127ms sleep with event-driven wake-up.
 	// Key includes clientId/epoch: a replacement stream may reuse the same
@@ -715,6 +737,9 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 			if logEntry.TsNs > holdFn() {
 				heldAtTsNs = logEntry.TsNs
 				return false, errHeldByPeerWatermark
+			}
+			if fs.cursorEntryGate(ctx, req) {
+				return true, nil
 			}
 			lastSeenTsNs = logEntry.TsNs
 			deliveredUpToTsNs = logEntry.TsNs
@@ -772,11 +797,11 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 	var readPersistedLogErr error
 	var readInMemoryLogErr error
 	var isDone bool
-	var lastCheckedFlushTsNs int64 = -1      // Track the last local flush we read the disk under
-	var lastCheckedFlushLowTsNs int64 = -1   // Track the last peer flush low-watermark we read the disk under
-	var lastDiskReadTsNs int64 = -1          // Track the last read position we used for disk read
-	var lastDiskRefsStopTsNs int64 = -1      // Track the last chunk listing bound we read the disk under
-	var lastDiskPassAt time.Time             // Paces re-probes for files no watermark signals
+	var lastCheckedFlushTsNs int64 = -1    // Track the last local flush we read the disk under
+	var lastCheckedFlushLowTsNs int64 = -1 // Track the last peer flush low-watermark we read the disk under
+	var lastDiskReadTsNs int64 = -1        // Track the last read position we used for disk read
+	var lastDiskRefsStopTsNs int64 = -1    // Track the last chunk listing bound we read the disk under
+	var lastDiskPassAt time.Time           // Paces re-probes for files no watermark signals
 	sentRefs := make(map[string]sentRefState)
 
 	aggBuffer := fs.filer.MetaAggregator.MetaLogBuffer
@@ -950,7 +975,7 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 				return false
 			default:
 			}
-			if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+			if !fs.subscriptionProceed(ctx, req) {
 				return false
 			}
 			// Caught-up readers park in the inner wait loop; the outer disk
@@ -1008,7 +1033,7 @@ func (fs *FilerServer) SubscribeMetadata(req *filer_pb.SubscribeMetadataRequest,
 			}
 			return nil
 		}
-		if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+		if !fs.subscriptionProceed(ctx, req) {
 			glog.V(0).Infof("client %v is closed", clientName)
 			return nil
 		}
@@ -1101,6 +1126,17 @@ func (fs *FilerServer) subscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 	// use negative client id to differentiate from addClient()/deleteClient() used in SubscribeMetadata()
 	req.ClientId = -req.ClientId
 
+	// Named cursor: acquire the name and resume from the persisted confirmed
+	// position. Peer aggregation streams never carry a name.
+	cursorMgr, cursorActive, cursorStart, cursorErr := fs.beginNamedSubscription(ctx, req, peerAddress)
+	if cursorErr != nil {
+		return cursorErr
+	}
+	if cursorActive != nil {
+		defer cursorMgr.release(context.WithoutCancel(stream.Context()), cursorActive)
+		req.SinceNs = cursorStart
+	}
+
 	isReplacing, alreadyKnown, clientName := fs.addClient("local", req.ClientName, peerAddress, req.PathPrefix, req.ClientId, req.ClientEpoch)
 	if isReplacing {
 	} else if alreadyKnown {
@@ -1114,8 +1150,18 @@ func (fs *FilerServer) subscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 	lastReadTime := log_buffer.NewMessagePosition(req.SinceNs, gapResumeCursorOffset)
 	glog.V(0).Infof(" + %v local subscribe %s from %+v clientId:%d", clientName, req.PathPrefix, lastReadTime, req.ClientId)
 
-	sender := newPipelinedSender(ctx, stream, 1024, req.ClientSupportsBatching)
+	sender := newPipelinedSender(ctx, fs.namedDeliveryStream(cursorMgr, cursorActive, stream), 1024, req.ClientSupportsBatching)
 	defer sender.Close()
+
+	if cursorActive != nil {
+		if err := sender.Send(&filer_pb.SubscribeMetadataResponse{
+			TsNs:                      req.SinceNs,
+			SubscriptionConfirmedTsNs: req.SinceNs,
+			SubscriptionOwnerInstance: cursorActive.instance,
+		}); err != nil {
+			return err
+		}
+	}
 
 	// Bounded gap waits use the buffer's subscriber notification plus a retry
 	// timer, so a flush landing between the disk read and the wait cannot
@@ -1148,6 +1194,9 @@ func (fs *FilerServer) subscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 				return false, errAggregationUpgrade
 			default:
 			}
+		}
+		if fs.cursorEntryGate(ctx, req) {
+			return true, nil
 		}
 		lastSeenTsNs = logEntry.TsNs
 		return baseEachLogEntryFn(logEntry)
@@ -1267,7 +1316,7 @@ func (fs *FilerServer) subscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 				default:
 				}
 			}
-			if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+			if !fs.subscriptionProceed(ctx, req) {
 				return false
 			}
 			lastHeartbeatNs = fs.maybeSendIdleHeartbeat(req, sender, fs.filer.LocalMetaLogBuffer, lastReadTime.Time.UnixNano(), lastSeenTsNs, lastHeartbeatNs)
@@ -1296,7 +1345,7 @@ func (fs *FilerServer) subscribeLocalMetadata(req *filer_pb.SubscribeMetadataReq
 		if isDone {
 			return nil
 		}
-		if !fs.hasClient(req.ClientId, req.ClientEpoch) {
+		if !fs.subscriptionProceed(ctx, req) {
 			return nil
 		}
 	}
@@ -1315,6 +1364,14 @@ func eachLogEntryFn(ctx context.Context, req *filer_pb.SubscribeMetadataRequest,
 		// per entry, and the send path alone cannot cover filtered entries.
 		if ctx.Err() != nil {
 			return true, nil
+		}
+		// A named cursor is exclusive at its confirmed position: the in-memory
+		// ring selects by window rather than by entry timestamp, so the window
+		// crossing that position can still carry entries at or below it. Drop
+		// them server-side; anonymous subscriptions keep their at-least-once,
+		// client-deduped boundary semantics.
+		if req.SubscriptionName != "" && logEntry.TsNs <= req.SinceNs {
+			return false, nil
 		}
 		if prefilter {
 			if skeleton, ok := filer_pb.ScanMetadataEventSkeleton(logEntry.Data); ok &&

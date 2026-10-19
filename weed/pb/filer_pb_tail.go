@@ -56,6 +56,22 @@ type MetadataFollowOption struct {
 	// never surface on this stream, so without it a pinned event waits for an
 	// unrelated source-stream reconnect (or a restart) to be replayed.
 	Resubscribe <-chan struct{}
+
+	// NamedSubscription, when non-empty, switches to the server-managed named
+	// cursor: the filer persists the confirmed position under this name, every
+	// connection carrying it resumes after the confirmed position, and only
+	// one stream is active for the name at a time. StartTsNs is then only used
+	// when the name is registered (or re-registered) for the first time.
+	NamedSubscription string
+	// Named cursor declarations, applied only when the name is first
+	// registered. Zero values take the server defaults.
+	SubscriptionTakeoverPolicy filer_pb.SubscriptionTakeoverPolicy
+	SubscriptionAckGranularity filer_pb.SubscriptionAckGranularity
+	SubscriptionAckTimeout     time.Duration
+	SubscriptionTakeoverGrace  time.Duration
+	// OnSubscriptionStart, when set, is called on every (re)connect with the
+	// owner token and the confirmed position the stream resumed after.
+	OnSubscriptionStart func(ownerInstance string, confirmedTsNs int64)
 }
 
 // ErrResubscribe ends a metadata follow when the consumer asked for the
@@ -104,9 +120,35 @@ func makeSubscribeMetadataFunc(option *MetadataFollowOption, processEventFn Proc
 			ClientSupportsBatching:       true,
 			ClientSupportsMetadataChunks: option.LogFileReaderFn != nil,
 			ClientSupportsIdleHeartbeat:  option.OnIdleHeartbeat != nil,
+			SubscriptionName:             option.NamedSubscription,
+			SubscriptionTakeoverPolicy:   option.SubscriptionTakeoverPolicy,
+			SubscriptionAckGranularity:   option.SubscriptionAckGranularity,
+			SubscriptionAckTimeoutNs:     int64(option.SubscriptionAckTimeout),
+			SubscriptionTakeoverGraceNs:  int64(option.SubscriptionTakeoverGrace),
 		})
 		if err != nil {
 			return fmt.Errorf("subscribe: %w", err)
+		}
+
+		// ackCursor confirms processed events of a named subscription. It is a
+		// no-op for anonymous subscriptions. A failed ack is logged but never
+		// fails processing: the unconfirmed range is simply redelivered later.
+		var ownerInstance string
+		ackCursor := func(timestamps []int64) {
+			if option.NamedSubscription == "" || len(timestamps) == 0 {
+				return
+			}
+			ackCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			resp, ackErr := client.AckMetadataSubscription(ackCtx, &filer_pb.AckMetadataSubscriptionRequest{
+				SubscriptionName: option.NamedSubscription,
+				TsNs:             timestamps,
+			})
+			if ackErr != nil {
+				glog.V(1).Infof("ack named subscription %s at %v failed: %v", option.NamedSubscription, timestamps, ackErr)
+				return
+			}
+			glog.V(4).Infof("acked named subscription %s through %d", option.NamedSubscription, resp.GetConfirmedTsNs())
 		}
 
 		if option.Resubscribe != nil {
@@ -249,13 +291,38 @@ func makeSubscribeMetadataFunc(option *MetadataFollowOption, processEventFn Proc
 				return err
 			}
 
+			// The first response on a named subscription names the server-side
+			// owner and the resume position; it is a control message, not an
+			// event or heartbeat.
+			if resp.SubscriptionOwnerInstance != "" {
+				ownerInstance = resp.SubscriptionOwnerInstance
+				glog.V(3).Infof("named subscription %s active as %s, resumed after %d",
+					option.NamedSubscription, ownerInstance, resp.SubscriptionConfirmedTsNs)
+				if option.OnSubscriptionStart != nil {
+					option.OnSubscriptionStart(ownerInstance, resp.SubscriptionConfirmedTsNs)
+				}
+				continue
+			}
+
 			// Process the envelope event (top-level fields) and any batched tail.
 			// The server folds a backlog into one response: the first event lives in
 			// the top-level fields, the rest in resp.Events. Either slot can hold a
-			// freshness signal, so both go through the same handler.
-			handleOneEvent(resp)
+			// freshness signal, so both go through the same handler. Every
+			// successfully handled non-heartbeat message of a named subscription is
+			// confirmed back, so reconnects resume behind the processed watermark.
+			var ackTs []int64
+			handleAndCollect := func(r *filer_pb.SubscribeMetadataResponse) {
+				handleOneEvent(r)
+				if option.NamedSubscription != "" && r.EventNotification != nil && r.TsNs > 0 {
+					ackTs = append(ackTs, r.TsNs)
+				}
+			}
+			handleAndCollect(resp)
 			for _, batchedEvent := range resp.Events {
-				handleOneEvent(batchedEvent)
+				handleAndCollect(batchedEvent)
+			}
+			if len(ackTs) > 0 {
+				ackCursor(ackTs)
 			}
 		}
 	}

@@ -86,6 +86,19 @@ service SeaweedFiler {
     rpc ListMetadataSubscribers (ListMetadataSubscribersRequest) returns (ListMetadataSubscribersResponse) {
     }
 
+    // Confirm consumption progress of a named, server-managed subscription
+    // cursor. Anonymous (unnamed) subscriptions are unaffected.
+    rpc AckMetadataSubscription (AckMetadataSubscriptionRequest) returns (AckMetadataSubscriptionResponse) {
+    }
+
+    // List the named subscription cursors this filer cluster persists.
+    rpc ListNamedMetadataSubscriptions (ListNamedMetadataSubscriptionsRequest) returns (ListNamedMetadataSubscriptionsResponse) {
+    }
+
+    // List the disposal records left when named subscriptions were reclaimed.
+    rpc ListMetadataSubscriptionDispositions (ListMetadataSubscriptionDispositionsRequest) returns (ListMetadataSubscriptionDispositionsResponse) {
+    }
+
     rpc KvGet (KvGetRequest) returns (KvGetResponse) {
     }
 
@@ -673,6 +686,18 @@ message SubscribeMetadataRequest {
     bool client_supports_batching = 11; // client can unpack SubscribeMetadataResponse.events
     bool client_supports_metadata_chunks = 12; // client can read log file chunks from volume servers
     bool client_supports_idle_heartbeat = 13; // server may send empty responses carrying the current time while the client is caught up
+    // Server-managed, named subscription cursor. Empty keeps the legacy
+    // anonymous semantics: the client self-reports since_ns and owns the
+    // progress. When non-empty the server persists the confirmed position
+    // under this name, resumes any connection carrying it from there, and
+    // enforces a single active stream per name.
+    string subscription_name = 14;
+    // Declarations applied when the name is first registered (or re-registered
+    // after a reclaim); reconnects with the same name ignore them.
+    SubscriptionTakeoverPolicy subscription_takeover_policy = 15; // how a new instance takes the name from an active stream
+    SubscriptionAckGranularity subscription_ack_granularity = 16; // how the client confirms progress
+    int64 subscription_ack_timeout_ns = 17; // reclaim the cursor when no ack arrives for this long; 0 = never reclaim
+    int64 subscription_takeover_grace_ns = 18; // DRAIN mode: longest wait for the old stream to ack in-flight events; 0 = server default
 }
 message SubscribeMetadataResponse {
     string directory = 1;
@@ -681,7 +706,14 @@ message SubscribeMetadataResponse {
     repeated SubscribeMetadataResponse events = 4; // batch of additional events (backlog catch-up)
     repeated LogFileChunkRef log_file_refs = 5;    // log file chunk refs for client direct-read
     int64 flushed_ts_ns = 6; // local log-buffer flush watermark: everything at or below it is on disk
+    // Sent once as the first response on a named subscription: the persisted
+    // confirmed position the stream starts after, and the owner token the
+    // client echoes on acks. Zero/empty on every other response and on
+    // anonymous subscriptions, so event payloads are unchanged.
+    int64 subscription_confirmed_ts_ns = 7;
+    string subscription_owner_instance = 8;
 }
+
 message ListMetadataSubscribersRequest {
     repeated string client_types = 1; // optional filter by client type, e.g. "mount"; empty = all
 }
@@ -965,4 +997,101 @@ message LookupDirectoryEntriesResponse {
     // present the matching token to a Volume instead of treating a shared
     // service credential as authority to read arbitrary needles.
     map<string, string> read_auth = 3;
+}
+
+// SubscriptionTakeoverPolicy selects what happens to an active stream when a
+// new connection registers the same subscription name.
+enum SubscriptionTakeoverPolicy {
+    TAKEOVER_DISCONNECT_OLD = 0; // the old stream is closed immediately; in-flight events may be redelivered
+    TAKEOVER_DRAIN_OLD = 1; // the old stream stops serving new events and is closed once it has acked what it holds (bounded by the grace)
+}
+
+// SubscriptionAckGranularity selects how a client confirms consumption.
+enum SubscriptionAckGranularity {
+    ACK_WATERMARK = 0; // an ack of ts_ns confirms every event at or below it
+    ACK_INDIVIDUAL = 1; // each listed ts_ns is one processed event; the confirmed position advances the acked prefix in delivery order
+}
+
+message AckMetadataSubscriptionRequest {
+    string subscription_name = 1;
+    // Confirmed event timestamps. With ACK_WATERMARK only the largest value is
+    // used. ACK_INDIVIDUAL may list several individually processed events.
+    repeated int64 ts_ns = 2;
+}
+message AckMetadataSubscriptionResponse {
+    int64 confirmed_ts_ns = 1; // server-side confirmed position after the ack; it never moves backwards
+}
+
+message ListNamedMetadataSubscriptionsRequest {
+}
+message NamedMetadataSubscription {
+    string name = 1;
+    int64 confirmed_ts_ns = 2;
+    int64 last_ack_at_ns = 3;
+    int64 created_at_ns = 4;
+    int64 ack_timeout_ns = 5;
+    SubscriptionTakeoverPolicy takeover_policy = 6;
+    SubscriptionAckGranularity ack_granularity = 7;
+    int64 takeover_grace_ns = 8;
+    bool active = 9;
+    string owner_instance = 10;
+    string owner_address = 11;
+    string path_prefix = 12;
+    bool reclaimed = 13;
+}
+message ListNamedMetadataSubscriptionsResponse {
+    repeated NamedMetadataSubscription subscriptions = 1;
+}
+
+// SubscriptionDisposition records what happened to a cursor when the server
+// reclaimed it, so the disposal is auditable after the cursor itself is gone
+// from the active set.
+message SubscriptionDisposition {
+    string name = 1;
+    string reason = 2;              // e.g. "ack_timeout"
+    int64 at_ns = 3;
+    int64 confirmed_ts_ns = 4;     // last confirmed position before the reclaim
+    int64 last_delivered_ts_ns = 5; // newest position the active stream had handed out, if known
+    string owner_instance = 6;
+    string owner_address = 7;
+    string detail = 8;
+}
+message ListMetadataSubscriptionDispositionsRequest {
+    int32 limit = 1; // newest first; 0 returns the server-held maximum
+}
+message ListMetadataSubscriptionDispositionsResponse {
+    repeated SubscriptionDisposition dispositions = 1;
+}
+
+// NamedSubscriptionCursorState is the persisted record behind one named
+// subscription cursor. Internal: stored as a filer-store KV value, not sent on
+// the wire to consumers.
+message NamedSubscriptionCursorState {
+    string name = 1;
+    int64 confirmed_ts_ns = 2;
+    int64 created_at_ns = 3;
+    int64 last_ack_at_ns = 4;
+    int64 ack_timeout_ns = 5;
+    SubscriptionTakeoverPolicy takeover_policy = 6;
+    SubscriptionAckGranularity ack_granularity = 7;
+    int64 takeover_grace_ns = 8;
+    string path_prefix = 9;
+    repeated string path_prefixes = 10;
+    repeated string directories = 11;
+    int32 signature = 12;
+    // active ownership (lease guarded)
+    string owner_instance = 13;
+    string owner_address = 14;
+    int64 owner_epoch = 15; // bumped on every ownership change; fences stale owners
+    int64 lease_until_ns = 16;
+    // pending takeover demand
+    string takeover_by_instance = 17;
+    string takeover_by_address = 18;
+    int64 takeover_at_ns = 19;
+    int64 drain_grace_until_ns = 20;
+    // newest event position the owner has handed out (persisted by the owner
+    // while draining so another filer can judge drain completion)
+    int64 last_delivered_ts_ns = 21;
+    bool reclaimed = 22;
+    int64 last_renew_at_ns = 23;
 }
