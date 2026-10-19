@@ -102,6 +102,14 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if err == filer_pb.ErrNotFound {
+			// Distinguish "never existed" from "vanished because a recursive
+			// deletion job currently owns this prefix".
+			if job := fs.activeDeletingJob(util.FullPath(path)); job != nil {
+				glog.V(2).InfofCtx(ctx, "Deleting prefix %s (job %s)", path, job.JobId)
+				w.Header().Set(SeaweedfsDeletingJobHeader, job.JobId)
+				writeJsonError(w, r, http.StatusConflict, filer.PathDeletingJobError(job.JobId, path))
+				return
+			}
 			glog.V(2).InfofCtx(ctx, "Not found %s: %v", path, err)
 			stats.FilerHandlerCounter.WithLabelValues(stats.ErrorReadNotFound).Inc()
 			w.WriteHeader(http.StatusNotFound)
@@ -111,6 +119,13 @@ func (fs *FilerServer) GetOrHeadHandler(w http.ResponseWriter, r *http.Request) 
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
+	}
+
+	// The job root is kept (and marked) while its deletion runs: surface the
+	// job id on the response regardless of whether the body is a directory
+	// listing or metadata.
+	if jobId, marked := entry.Extended[filer.ExtDeletingJobKey]; marked {
+		w.Header().Set(SeaweedfsDeletingJobHeader, string(jobId))
 	}
 
 	query := r.URL.Query()

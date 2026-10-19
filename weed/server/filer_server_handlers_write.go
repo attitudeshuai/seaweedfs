@@ -11,6 +11,7 @@ import (
 
 	"github.com/seaweedfs/seaweedfs/weed/s3api/s3_constants"
 
+	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/operation"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
@@ -261,6 +262,25 @@ func (fs *FilerServer) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if fs.entryLockTable != nil {
 		pathLock := fs.entryLockTable.AcquireLock("DeleteHandler", fullPath, util.ExclusiveLock)
 		defer fs.entryLockTable.ReleaseLock(fullPath, pathLock)
+	}
+
+	// A recursive delete above the declared threshold becomes a durable,
+	// batched job: register it and return the descriptor while the worker
+	// advances; smaller trees keep the synchronous 204 path.
+	if isRecursive {
+		job, asyncJob, jobErr := fs.filer.MaybeStartDeleteJob(r.Context(), fullPath, filer.DeleteJobOptions{
+			IgnoreRecursiveError: ignoreRecursiveError,
+			ShouldDeleteChunks:   !skipChunkDeletion,
+		})
+		if jobErr != nil {
+			glog.V(1).Infoln("deleting", objectPath, ":", jobErr.Error())
+			writeJsonError(w, r, http.StatusInternalServerError, jobErr)
+			return
+		}
+		if asyncJob {
+			fs.writeDeleteJobResponse(w, r, http.StatusAccepted, job)
+			return
+		}
 	}
 
 	err = fs.filer.DeleteEntryMetaAndData(context.Background(), fullPath, isRecursive, ignoreRecursiveError, !skipChunkDeletion, false, nil, 0)

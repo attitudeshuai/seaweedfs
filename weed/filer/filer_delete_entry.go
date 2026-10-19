@@ -150,21 +150,60 @@ func (f *Filer) DeleteEntryMetaAndData(ctx context.Context, p util.FullPath, isR
 	}
 
 	if isDeleteCollection {
-		if collectionName != "" {
-			// the entry is already gone: a caller that hung up must not leave the
-			// collection behind, so this cleanup outlives the request -- bounded all
-			// the same, or a master that is down parks this handler indefinitely and
-			// every client retry behind it parks another
-			collectionCtx, cancelCollection := context.WithTimeout(context.WithoutCancel(ctx), collectionDeleteTimeout)
-			f.DoDeleteCollection(collectionCtx, collectionName)
-			cancelCollection()
-		}
-		// drop bucket-labeled series held by this process; the S3 gateway
-		// only cleans its own registry
-		stats.DeleteBucketMetrics(entry.Name())
+		f.finalizeBucketDeletion(ctx, entry, collectionName)
 	}
 
 	return nil
+}
+
+// deleteFileChildSideEffects performs the side effects of deleting one file
+// child that are independent of how its metadata row is removed: remote
+// object deletion, the delete event, hardlink cleanup and chunk collection.
+// The synchronous recursive walk and the batched deletion-job worker share
+// it so a file is deleted identically on both paths. It separates the two
+// failures the walk treats differently: remoteDeleteErr is the remote-object
+// deletion failure (always logged; the walk ignores it under
+// ignoreRecursiveError) and hardlinkErr is a post-event hardlink cleanup
+// failure (the walk always aborts on it). The caller decides control flow;
+// the delete event, hardlink handling and chunk collection only run when the
+// remote delete did not fail fatally.
+func (f *Filer) deleteFileChildSideEffects(ctx context.Context, sub *Entry, chunksToDelete *[]*filer_pb.FileChunk, ignoreRecursiveError, shouldDeleteChunks, isFromOtherCluster bool, onHardLinkIdsFn OnHardLinkIdsFunc) (remoteDeleteErr, hardlinkErr error) {
+	if !isFromOtherCluster && !keepsRemoteObject(ctx) {
+		if _, remoteErr := f.maybeDeleteFromRemote(ctx, sub); remoteErr != nil {
+			glog.Warningf("remote delete child %s: %v", sub.FullPath, remoteErr)
+			if !ignoreRecursiveError {
+				return remoteErr, nil
+			}
+		}
+	}
+	f.NotifyUpdateEvent(ctx, deleteEventEntry(ctx, sub), nil, shouldDeleteChunks, isFromOtherCluster, nil)
+	if len(sub.HardLinkId) != 0 {
+		// hard link chunk data are deleted separately
+		return nil, onHardLinkIdsFn([]HardLinkId{sub.HardLinkId})
+	}
+	if shouldDeleteChunks {
+		*chunksToDelete = append(*chunksToDelete, sub.GetChunks()...)
+	}
+	return nil, nil
+}
+
+// finalizeBucketDeletion drops the now-deleted bucket's private collection
+// and its bucket-labeled metric series. Callers pass the collection name
+// resolved before the deletion: empty means the bucket shared a collection
+// paths outside it still write to, so only metrics are cleaned. The
+// collection delete is issued on a context that outlives the request on
+// purpose -- a client that hung up must not leave the collection behind --
+// but is bounded by collectionDeleteTimeout, since a master that is down
+// would otherwise park every retry behind the same wait.
+func (f *Filer) finalizeBucketDeletion(ctx context.Context, entry *Entry, collectionName string) {
+	if collectionName != "" {
+		collectionCtx, cancelCollection := context.WithTimeout(context.WithoutCancel(ctx), collectionDeleteTimeout)
+		f.DoDeleteCollection(collectionCtx, collectionName)
+		cancelCollection()
+	}
+	// drop bucket-labeled series held by this process; the S3 gateway
+	// only cleans its own registry
+	stats.DeleteBucketMetrics(entry.Name())
 }
 
 func (f *Filer) doBatchDeleteFolderMetaAndData(ctx context.Context, entry *Entry, isRecursive, ignoreRecursiveError, shouldDeleteChunks, isDeletingBucket, isFromOtherCluster bool, signatures []int32, onHardLinkIdsFn OnHardLinkIdsFunc) (err error) {
@@ -206,25 +245,17 @@ func (f *Filer) doBatchDeleteFolderMetaAndData(ctx context.Context, entry *Entry
 					subIsDeletingBucket := f.IsBucket(sub)
 					err = f.doBatchDeleteFolderMetaAndData(ctx, sub, isRecursive, ignoreRecursiveError, shouldDeleteChunks, subIsDeletingBucket, isFromOtherCluster, nil, onHardLinkIdsFn)
 				} else {
-					if !isFromOtherCluster && !keepsRemoteObject(ctx) {
-						if _, remoteErr := f.maybeDeleteFromRemote(ctx, sub); remoteErr != nil {
-							glog.Warningf("remote delete child %s: %v", sub.FullPath, remoteErr)
-							if !ignoreRecursiveError {
-								err = remoteErr
-							}
-						}
-					}
-					if err != nil && !ignoreRecursiveError {
+					remoteErr, hardlinkErr := f.deleteFileChildSideEffects(ctx, sub, &chunksToDelete, ignoreRecursiveError, shouldDeleteChunks, isFromOtherCluster, onHardLinkIdsFn)
+					if remoteErr != nil && !ignoreRecursiveError {
+						// Legacy control flow: a remote failure breaks the
+						// child page rather than returning, so a short page
+						// still runs the folder sweep tail; keep it identical
+						// to the pre-job synchronous path.
+						err = remoteErr
 						break
 					}
-					f.NotifyUpdateEvent(ctx, deleteEventEntry(ctx, sub), nil, shouldDeleteChunks, isFromOtherCluster, nil)
-					if len(sub.HardLinkId) != 0 {
-						// hard link chunk data are deleted separately
-						err = onHardLinkIdsFn([]HardLinkId{sub.HardLinkId})
-					} else {
-						if shouldDeleteChunks {
-							chunksToDelete = append(chunksToDelete, sub.GetChunks()...)
-						}
+					if hardlinkErr != nil {
+						err = hardlinkErr
 					}
 				}
 				if err != nil && !ignoreRecursiveError {

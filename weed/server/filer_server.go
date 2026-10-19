@@ -369,6 +369,12 @@ func NewFilerServer(defaultMux, readonlyMux *http.ServeMux, option *FilerOption)
 	}
 	fs.filer.AggregateFromPeers(option.Host, existingNodes, startFromTime)
 
+	// Resume durable recursive-deletion jobs and arm the deleting-prefix
+	// write gate before the filer announces itself.
+	if err := fs.filer.StartDeleteJobs(context.Background()); err != nil {
+		glog.Fatalf("%s start recursive delete jobs: %v", option.Host, err)
+	}
+
 	// A peer replaying its backlog applies the old owner's events over this
 	// filer's fresh writes if it takes lock-ring ownership before the replay
 	// finishes, so the announce gate waits for these peers to catch up.

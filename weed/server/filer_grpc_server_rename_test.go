@@ -26,6 +26,7 @@ import (
 type renameTestStore struct {
 	mu        sync.Mutex
 	entries   map[string]*filer.Entry
+	kv        map[string][]byte
 	findCalls map[string]int
 	commitErr error
 	deleteErr error
@@ -51,6 +52,7 @@ func (s *renameTestStore) txDone(ctx context.Context) error {
 func newRenameTestStore() *renameTestStore {
 	return &renameTestStore{
 		entries:   make(map[string]*filer.Entry),
+		kv:        make(map[string][]byte),
 		findCalls: make(map[string]int),
 	}
 }
@@ -76,13 +78,27 @@ func (s *renameTestStore) RollbackTransaction(ctx context.Context) error {
 	}
 	return nil
 }
-func (s *renameTestStore) KvPut(context.Context, []byte, []byte) error {
+func (s *renameTestStore) KvPut(_ context.Context, k, v []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.kv[string(k)] = append([]byte(nil), v...)
 	return nil
 }
-func (s *renameTestStore) KvGet(context.Context, []byte) ([]byte, error) {
-	return nil, filer.ErrKvNotFound
+func (s *renameTestStore) KvGet(_ context.Context, k []byte) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.kv[string(k)]
+	if !ok {
+		return nil, filer.ErrKvNotFound
+	}
+	return append([]byte(nil), v...), nil
 }
-func (s *renameTestStore) KvDelete(context.Context, []byte) error { return nil }
+func (s *renameTestStore) KvDelete(_ context.Context, k []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.kv, string(k))
+	return nil
+}
 
 func (s *renameTestStore) InsertEntry(ctx context.Context, entry *filer.Entry) error {
 	if err := s.txDone(ctx); err != nil {

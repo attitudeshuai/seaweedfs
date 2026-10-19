@@ -21,6 +21,7 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/storage/needle"
 	"github.com/seaweedfs/seaweedfs/weed/util"
 	"github.com/seaweedfs/seaweedfs/weed/wdclient"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -42,9 +43,18 @@ func (fs *FilerServer) LookupDirectoryEntry(ctx context.Context, req *filer_pb.L
 
 	glog.V(4).InfofCtx(ctx, "LookupDirectoryEntry %s", filepath.Join(req.Directory, req.Name))
 
-	entry, logTsNs, err := fs.fencedFindEntry(ctx, util.JoinPath(req.Directory, req.Name))
+	path := util.JoinPath(req.Directory, req.Name)
+	entry, logTsNs, err := fs.fencedFindEntry(ctx, path)
 
 	if err == filer_pb.ErrNotFound {
+		// Distinguish an entry that never existed from one a recursive
+		// deletion job has already removed while its prefix is still gated.
+		if fs.filer.DeleteJobs != nil {
+			if job := fs.filer.DeleteJobs.ActiveJobCovering(path); job != nil {
+				return nil, status.Errorf(codes.FailedPrecondition, "%s: job %s owns %s",
+					filer.MsgPathDeletingPrefix, job.JobId, path)
+			}
+		}
 		return &filer_pb.LookupDirectoryEntryResponse{LogTsNs: logTsNs, LogSignature: fs.filer.Signature}, err
 	}
 	if err != nil {
@@ -905,6 +915,47 @@ func (fs *FilerServer) DeleteEntry(ctx context.Context, req *filer_pb.DeleteEntr
 	if req.KeepRemoteObject {
 		ctx = filer.WithKeepRemoteObject(ctx)
 	}
+
+	// A large local recursive delete runs as a durable, batched job. The RPC
+	// resolves when the job reaches a terminal state; a disconnected client
+	// does not stop the job, and a repeated call attaches to the same job
+	// instead of restarting the traversal. Peer-replayed deletes always take
+	// the synchronous path so replication cannot circulate jobs.
+	if !req.IsFromOtherCluster && req.IsRecursive {
+		job, asyncJob, jobErr := fs.filer.MaybeStartDeleteJob(ctx, fullpath, filer.DeleteJobOptions{
+			IgnoreRecursiveError: req.IgnoreRecursiveError,
+			ShouldDeleteChunks:   req.IsDeleteData,
+			IfNotModifiedAfter:   req.IfNotModifiedAfter,
+			KeepRemoteObject:     req.KeepRemoteObject,
+		})
+		if jobErr != nil && jobErr != filer_pb.ErrNotFound {
+			return &filer_pb.DeleteEntryResponse{Error: jobErr.Error()}, nil
+		}
+		if asyncJob {
+			if trailerErr := grpc.SetTrailer(ctx, metadata.Pairs(filer_pb.DeleteJobIdTrailerKey, job.JobId)); trailerErr != nil {
+				glog.V(2).InfofCtx(ctx, "set delete job trailer for %s: %v", job.JobId, trailerErr)
+			}
+			final, waitErr := fs.filer.DeleteJobs.WaitTerminal(ctx, job.JobId)
+			if waitErr != nil {
+				return &filer_pb.DeleteEntryResponse{Error: waitErr.Error()}, nil
+			}
+			if ctx.Err() != nil {
+				// The request ended while the durable job continues: this is
+				// not a deletion failure, and the next call attaches.
+				return &filer_pb.DeleteEntryResponse{}, nil
+			}
+			resp = &filer_pb.DeleteEntryResponse{}
+			switch final.State {
+			case filer.DeleteJobStateComplete:
+			case filer.DeleteJobStateCancelled:
+				resp.Error = filer.MsgDeleteJobCancelledPrefix + ": job " + job.JobId
+			default: // failed
+				resp.Error = final.Error
+			}
+			return resp, nil
+		}
+	}
+
 	ctx, eventSink := filer.WithMetadataEventSink(ctx)
 	err = fs.filer.DeleteEntryMetaAndData(ctx, fullpath, req.IsRecursive, req.IgnoreRecursiveError, req.IsDeleteData, req.IsFromOtherCluster, req.Signatures, req.IfNotModifiedAfter)
 	resp = &filer_pb.DeleteEntryResponse{}

@@ -79,6 +79,9 @@ type Filer struct {
 	DeletionRetryQueue            *DeletionRetryQueue
 	EmptyFolderCleaner            *empty_folder_cleanup.EmptyFolderCleaner
 	EmptyFolderCleanupDelay       time.Duration
+	// DeleteJobs runs large recursive deletes as durable, batched jobs. Nil
+	// in Filer literals built without NewFiler; every access is nil-safe.
+	DeleteJobs *DeleteJobManager
 	persistedLogCache             *persistedLogCache
 	metaLogInflight               metaLogInflight
 	remoteTombstones              *remoteDeletionTombstones
@@ -146,6 +149,7 @@ func NewFiler(masters pb.ServerDiscovery, grpcDialOption grpc.DialOption, filerH
 		remoteTombstones:    newRemoteDeletionTombstones(),
 		EntryLockTable:      util.NewLockTable[util.FullPath](),
 	}
+	f.DeleteJobs = NewDeleteJobManager(f)
 	f.flushCtx, f.flushCancel = context.WithCancel(context.Background())
 	if f.UniqueFilerId < 0 {
 		f.UniqueFilerId = -f.UniqueFilerId
@@ -423,6 +427,12 @@ func (f *Filer) CreateEntry(ctx context.Context, entry *Entry, existing *Entry, 
 		return nil
 	}
 
+	// Refuse/queue writes under a prefix whose recursive deletion is running,
+	// unless the mutation is the deletion worker's own internal operation.
+	if err := f.checkDeletingJobWrite(ctx, entry.FullPath); err != nil {
+		return err
+	}
+
 	if entry.FullPath.IsLongerFileName(maxFilenameLength) {
 		return filer_pb.ErrEntryNameTooLong
 	}
@@ -521,6 +531,16 @@ func (f *Filer) ensureParentDirectoryEntry(ctx context.Context, entry *Entry, di
 	dirEntry, findErr := f.FindEntry(ctx, util.FullPath(dirPath))
 	if findErr != nil && !errors.Is(findErr, filer_pb.ErrNotFound) {
 		return findErr
+	}
+
+	// Store-visible second line of the deletion gate: even a filer whose
+	// in-memory prefix set is stale refuses to build a tree under a directory
+	// a deletion job has marked. The worker never creates parents, so its own
+	// deletions do not hit this check.
+	if dirEntry != nil && !deleteJobBypassed(ctx) {
+		if jobId, marked := dirEntry.Extended[ExtDeletingJobKey]; marked {
+			return pathDeletingErrorf(string(jobId), dirPath)
+		}
 	}
 
 	// no such existing directory
@@ -677,6 +697,9 @@ func (f *Filer) EnsureDirectoryEntry(ctx context.Context, dirPath util.FullPath,
 }
 
 func (f *Filer) UpdateEntry(ctx context.Context, oldEntry, entry *Entry, isFromOtherCluster bool) (err error) {
+	if err := f.checkDeletingJobWrite(ctx, entry.FullPath); err != nil {
+		return err
+	}
 	if oldEntry != nil {
 		entry.Attr.Crtime = oldEntry.Attr.Crtime
 		if oldEntry.Attr.Inode != 0 {
@@ -911,6 +934,9 @@ func (f *Filer) IsDirectoryEmpty(ctx context.Context, dirPath util.FullPath) (bo
 }
 
 func (f *Filer) Shutdown() {
+	if f.DeleteJobs != nil {
+		f.DeleteJobs.Stop()
+	}
 	close(f.deletionQuit)
 	if f.EmptyFolderCleaner != nil {
 		f.EmptyFolderCleaner.Stop()

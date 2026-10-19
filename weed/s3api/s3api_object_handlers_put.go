@@ -1619,6 +1619,14 @@ func filerErrorToS3Error(err error) s3err.ErrorCode {
 		return s3err.ErrNone
 	}
 
+	// A write under a prefix a recursive-deletion job owns is transient: the
+	// job finishes (or is cancelled) and the client can retry. It arrives
+	// either as the filer's text marker (CreateEntry resp.Error) or as a
+	// FailedPrecondition gRPC status (rename/lookup).
+	if filer.IsPathDeletingError(err) {
+		return s3err.ErrServiceUnavailable
+	}
+
 	// Filer sentinel errors — matched via errors.Is() after crossing gRPC boundary
 	switch {
 	case errors.Is(err, filer_pb.ErrEntryNameTooLong):

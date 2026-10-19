@@ -12,6 +12,8 @@ import (
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
 	"github.com/seaweedfs/seaweedfs/weed/util"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // acquireRenamePathLocks holds both paths across commit and notification so a
@@ -43,6 +45,14 @@ func (fs *FilerServer) AtomicRenameEntry(ctx context.Context, req *filer_pb.Atom
 
 	if err := fs.filer.CanRename(ctx, oldParent, newParent, req.OldName); err != nil {
 		return nil, err
+	}
+
+	// Refuse/queue renames into a prefix a deletion job is tearing down.
+	if fs.filer.DeleteJobs != nil {
+		target := newParent.Child(req.NewName)
+		if err := fs.filer.DeleteJobs.CheckWrite(ctx, target); err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+		}
 	}
 
 	defer fs.acquireRenamePathLocks("AtomicRenameEntry", oldParent.Child(req.OldName), newParent.Child(req.NewName))()
@@ -99,6 +109,14 @@ func (fs *FilerServer) StreamRenameEntry(req *filer_pb.StreamRenameEntryRequest,
 
 	if err := fs.filer.CanRename(stream.Context(), oldParent, newParent, req.OldName); err != nil {
 		return err
+	}
+
+	// Refuse/queue renames into a prefix a deletion job is tearing down.
+	if fs.filer.DeleteJobs != nil {
+		target := newParent.Child(req.NewName)
+		if err := fs.filer.DeleteJobs.CheckWrite(stream.Context(), target); err != nil {
+			return status.Errorf(codes.FailedPrecondition, "%v", err)
+		}
 	}
 
 	defer fs.acquireRenamePathLocks("StreamRenameEntry", oldParent.Child(req.OldName), newParent.Child(req.NewName))()

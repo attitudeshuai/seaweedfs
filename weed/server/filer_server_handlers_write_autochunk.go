@@ -61,7 +61,7 @@ func (fs *FilerServer) autoChunk(ctx context.Context, w http.ResponseWriter, r *
 		case errStr == constants.ErrMsgBadDigest:
 			writeJsonError(w, r, http.StatusBadRequest, err)
 		default:
-			writeJsonError(w, r, http.StatusInternalServerError, err)
+			writeMutationError(w, r, err)
 		}
 	} else if reply != nil {
 		if len(md5bytes) > 0 {

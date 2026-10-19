@@ -86,6 +86,10 @@ func (fs *FilerServer) filerHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
+		if jobId := r.URL.Query().Get("deleteJob"); jobId != "" {
+			fs.deleteJobStatusHandler(w, r)
+			return
+		}
 		fs.GetOrHeadHandler(w, r)
 	case http.MethodDelete:
 		if _, ok := r.URL.Query()["tagging"]; ok {
@@ -94,6 +98,10 @@ func (fs *FilerServer) filerHandler(w http.ResponseWriter, r *http.Request) {
 			fs.DeleteHandler(w, r)
 		}
 	case http.MethodPost, http.MethodPut:
+		if jobId := r.URL.Query().Get("deleteJob"); jobId != "" {
+			fs.deleteJobActionHandler(w, r)
+			return
+		}
 		// wait until in flight data is less than the limit
 		contentLength := getContentLength(r)
 		fs.inFlightDataLimitCond.L.Lock()
